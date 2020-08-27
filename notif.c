@@ -89,6 +89,34 @@ notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
     return is_removed;
 }
 
+static void
+notif_chain_invoke_communication_channel(
+        notif_chain_elem_t *notif_chain_elem,            /*Provided by Notif Chain*/
+        notif_chain_elem_t *notif_chain_elem_from_list){ /*Represent the subscriber in the list*/
+
+    notif_chain_comm_channel_t *
+        notif_chain_comm_channel = &notif_chain_elem->notif_chain_comm_channel;
+
+    switch(notif_chain_comm_channel->notif_ch_type){
+
+        case NOTIF_C_CALLBACKS:
+            assert(notif_chain_elem_curr->app_cb);
+            notif_chain_elem_curr->app_cb(
+                notif_chain_elem->data, notif_chain_elem->data_size);
+        break;
+        case NOTIF_C_MSG_Q:
+        break;
+        case NOTIF_C_AF_UNIX:
+        break;
+        case NOTIF_C_INET_SOCKETS:
+        break;
+        case NOTIF_C_NOT_KNOWN:
+        break;
+        default:
+            assert(0);
+    }
+}
+
 bool
 notif_chain_invoke(notif_chain_t *notif_chain,
                 notif_chain_elem_t *notif_chain_elem){
@@ -97,13 +125,14 @@ notif_chain_invoke(notif_chain_t *notif_chain,
     
     ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain, notif_chain_elem_curr){
 
-        if(notif_chain->comp_fn(notif_chain_elem_curr->data,
+        if(notif_chain->comp_fn &&
+            notif_chain->comp_fn(notif_chain_elem_curr->data,
             notif_chain_elem_curr->data_size, 
             notif_chain_elem->data,
             notif_chain_elem->data_size) == 0){
 
-            notif_chain_elem_curr->app_cb(
-                notif_chain_elem->data, notif_chain_elem->data_size);
+            notif_chain_invoke_communication_channel(
+                notif_chain_elem, notif_chain_elem_curr);
         }
     } ITERTAE_NOTIF_CHAIN_END(notif_chain, notif_chain_elem_curr);
 }
