@@ -36,12 +36,17 @@
 
 typedef struct notif_chain_elem_ notif_chain_elem_t;
 typedef struct notif_chain_ notif_chain_t;
-typedef int (*notif_chain_comp_fn)(void *data1, uint32_t data_size1,
+typedef int (*notif_chain_comp_cb)(void *data1, uint32_t data_size1,
                                    void *data2, uint32_t data_size2);
 typedef void (*notif_chain_app_cb)(void *data, uint32_t data_size);
+typedef char * (*app_key_data_print_cb)(void *data,
+                        uint32_t size,
+                        char *outbuffer,
+                        uint32_t outbuffer_size);
 
 typedef enum notif_ch_type_{
 
+    NOTIF_C_ANY,
     NOTIF_C_CALLBACKS,
     NOTIF_C_MSG_Q,
     NOTIF_C_AF_UNIX,
@@ -56,42 +61,60 @@ typedef struct notif_chain_comm_channel_{
         /*Via Callbacks*/
         notif_chain_app_cb app_cb;
         /*Via MsgQ*/
-        char msgQ_name[32];
+        struct {
+            char msgQ_name[32];
+        } mq;
+
         /*Via UNIX Sockets*/
-        char unix_skt_name[32];
+        struct {
+            char unix_skt_name[32];
+        } unix_skt;
         /*Via INET_SOCKETS*/
         struct {
 
             uint32_t ip_addr;
             uint8_t port_no;
             uint8_t protocol_no; /*UDP or TCP or simply IP*/
+            int sock_fd;
         } inet_skt_info;
     }u;
 } notif_chain_comm_channel_t;
+
+#define NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel_ptr)           \
+    (notif_chain_comm_channel_ptr->u.app_cb)
+#define NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel_ptr)        \
+    (notif_chain_comm_channel_ptr->u.mq.msgQ_name)
+#define NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel_ptr)         \
+    (notif_chain_comm_channel_ptr->u.unix_skt.unix_skt_name)
+#define NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel_ptr)          \
+    (notif_chain_comm_channel_ptr->u.inet_skt_info.ip_addr)
+#define NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel_ptr)          \
+    (notif_chain_comm_channel_ptr->u.inet_skt_info.port_no)
+#define NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel_ptr)            \
+    (notif_chain_comm_channel_ptr->u.inet_skt_info.protocol_no)
+#define NOTIF_CHAIN_ELEM_INET_SOCKFD(notif_chain_comm_channel_ptr)      \
+    (notif_chain_comm_channel_ptr->u.inet_skt_info.sock_fd)
 
 struct notif_chain_elem_{
 
     notif_chain_elem_t *prev;
     notif_chain_elem_t *next;
+    
+    pid_t client_pid;
 
-    union {
-
+    struct {
         /* Key data to decide which 
          * subscriber to notify
          * */
-        struct {
-            void *app_key_data;
-            uint32_t app_key_data_size;
-        } app_key_data_info;
+        void *app_key_data;
+        uint32_t app_key_data_size;
 
         /* Once the subscriber is chosen, 
          * NCM must send notif to subscriber 
-         * with this data*/
-        struct {
-            void *app_data_to_notify;
-            uint32_t app_data_to_notify_size;
-        } app_data_to_notify_info;
-
+         * with this data*/ 
+        bool is_alloc_app_data_to_notify;
+        void *app_data_to_notify;
+        uint32_t app_data_to_notify_size;
     } data;
 
     notif_chain_comm_channel_t 
@@ -106,18 +129,31 @@ struct notif_chain_{
      * present in chain. This can be NULL if
      * comparison is not required
      * */
-    notif_chain_comp_fn comp_fn;
-
+    notif_chain_comp_cb comp_cb;
+    app_key_data_print_cb print_cb;
     /* Head of the linked list containing
      * notif_chain_elem_t
      * */
     notif_chain_elem_t *head;
+
+    /*Every notif Chain would listen on
+     * INET socket so that client processes
+     * (local or remote could register or
+     * de-register)*/
+    uint32_t ip_addr;
+    uint32_t udp_port_no;
+    int sock_fd;
 };
 
 void
+notif_chain_free_notif_chain_elem(
+                notif_chain_elem_t *notif_chain_elem);
+void
 notif_chain_init(notif_chain_t *notif_chain,
                  char *chain_name,
-                 notif_chain_comp_fn comp_fn);
+                 notif_chain_comp_cb comp_cb,
+                 app_key_data_print_cb print_cb,
+                 char *ip_addr, uint32_t udp_port_no);
 
 void
 notif_chain_delete(notif_chain_t *notif_chain);
@@ -133,6 +169,18 @@ notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
 bool
 notif_chain_invoke(notif_chain_t *notif_chain,
                 notif_chain_elem_t *notif_chain_elem);
+
+void
+notif_chain_dump(notif_chain_t *notif_chain);
+
+bool
+notif_chain_communication_channel_match(
+                notif_chain_comm_channel_t *channel1,
+                notif_chain_comm_channel_t *channel2);
+
+void
+notif_chain_release_communication_channel_resources(
+                notif_chain_comm_channel_t *channel);
 
 static inline void
 notif_chain_elem_remove(notif_chain_t *notif_chain,
@@ -168,8 +216,5 @@ notif_chain_elem_remove(notif_chain_t *notif_chain,
         _next_notif_chain_elem = notif_chain_elem_ptr->next;
 
 #define ITERTAE_NOTIF_CHAIN_END(notif_chain_ptr, notif_chain_elem_ptr)  }}
-
-void
-notif_chain_dump(notif_chain_t *notif_chain);
 
 #endif /* __NOTIF_H__ */
