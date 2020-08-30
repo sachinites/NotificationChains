@@ -44,6 +44,9 @@ typedef char * (*app_key_data_print_cb)(void *data,
                         char *outbuffer,
                         uint32_t outbuffer_size);
 
+typedef notif_chain_t * 
+    (*notif_chain_lookup_by_name_cb)(char *notif_chain_name);
+
 typedef enum notif_ch_type_{
 
     NOTIF_C_ANY,
@@ -95,6 +98,9 @@ typedef struct notif_chain_comm_channel_{
 #define NOTIF_CHAIN_ELEM_INET_SOCKFD(notif_chain_comm_channel_ptr)      \
     (notif_chain_comm_channel_ptr->u.inet_skt_info.sock_fd)
 
+#define NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem_ptr)                     \
+    (notif_chain_elem_ptr->notif_chain_comm_channel.notif_ch_type)
+
 struct notif_chain_elem_{
 
     notif_chain_elem_t *prev;
@@ -136,13 +142,15 @@ struct notif_chain_{
      * */
     notif_chain_elem_t *head;
 
-    /*Every notif Chain would listen on
+#if 0
+    /* Every notif Chain would listen on
      * INET socket so that client processes
      * (local or remote could register or
      * de-register)*/
     uint32_t ip_addr;
     uint32_t udp_port_no;
     int sock_fd;
+#endif
 };
 
 void
@@ -153,7 +161,7 @@ notif_chain_init(notif_chain_t *notif_chain,
                  char *chain_name,
                  notif_chain_comp_cb comp_cb,
                  app_key_data_print_cb print_cb,
-                 char *ip_addr, uint32_t udp_port_no);
+                 notif_chain_lookup_by_name_cb notif_chain_lookup_by_name_cb_fn);
 
 void
 notif_chain_delete(notif_chain_t *notif_chain);
@@ -206,6 +214,14 @@ notif_chain_elem_remove(notif_chain_t *notif_chain,
     notif_chain_elem->prev = 0;
     notif_chain_elem->next = 0;
 }
+
+bool
+notif_chain_subscribe(char *notif_name, 
+                      notif_chain_elem_t *notif_chain_elem);
+
+bool
+notif_chain_unsubscribe(char *notif_name, 
+                      notif_chain_elem_t *notif_chain_elem);
 
 #define ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain_ptr, notif_chain_elem_ptr)  \
 {\

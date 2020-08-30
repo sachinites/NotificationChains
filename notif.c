@@ -40,13 +40,16 @@
 #include <netdb.h>  /*for struct hostent*/
 #include "notif.h"
 
+static notif_chain_lookup_by_name_cb 
+    notif_chain_lookup_by_name_cb_fn;
+
 void
 notif_chain_init(notif_chain_t *notif_chain,
                 char *chain_name,
                 notif_chain_comp_cb comp_cb,
                 app_key_data_print_cb print_cb,
-                char *ip_addr,
-                uint32_t udp_port_no){
+                notif_chain_lookup_by_name_cb 
+                    _notif_chain_lookup_by_name_cb_fn){
 
     struct sockaddr_in notif_chain_addr;
     
@@ -55,7 +58,10 @@ notif_chain_init(notif_chain_t *notif_chain,
     notif_chain->name[sizeof(notif_chain->name) -1] = '\0';
     notif_chain->comp_cb = comp_cb;
     notif_chain->print_cb = print_cb;
+    assert(notif_chain_lookup_by_name_cb_fn == NULL);
+    notif_chain_lookup_by_name_cb_fn = _notif_chain_lookup_by_name_cb_fn;
 
+#if 0
     if(ip_addr){
         
         /*Open UDP socket*/
@@ -77,6 +83,7 @@ notif_chain_init(notif_chain_t *notif_chain,
             return;
         }
     }
+#endif
 }
 
 void
@@ -347,3 +354,75 @@ notif_chain_dump(notif_chain_t *notif_chain){
     } ITERTAE_NOTIF_CHAIN_END(notif_chain, notif_chain_elem_curr);
 }
 
+bool
+notif_chain_subscribe(char *notif_chain_name,
+                      notif_chain_elem_t *notif_chain_elem){
+
+    notif_chain_t *notif_chain;
+
+    notif_ch_type_t notif_ch_type = NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem);
+
+    switch(notif_ch_type){
+        
+        case NOTIF_C_CALLBACKS:
+            if(!notif_chain_lookup_by_name_cb_fn){
+                printf("notif_chain_lookup_by_name_cb CB not registered\n");
+                return false;
+            }
+            notif_chain = (notif_chain_lookup_by_name_cb_fn)(notif_chain_name);
+            if(!notif_chain){
+                printf("Appln dont have Notif Chain with name %s\n", 
+                    notif_chain_name);
+                return false;
+            }
+            notif_chain_register_chain_element(notif_chain, notif_chain_elem);
+            return true;
+        case NOTIF_C_MSG_Q:
+        case NOTIF_C_AF_UNIX:
+        case NOTIF_C_INET_SOCKETS:
+        break;
+        case NOTIF_C_ANY:
+        case NOTIF_C_NOT_KNOWN:
+            return false;
+        default:
+            return false;
+    }
+    return true;
+}
+
+
+bool
+notif_chain_unsubscribe(char *notif_chain_name,
+                      notif_chain_elem_t *notif_chain_elem){
+
+    notif_chain_t *notif_chain;
+
+    notif_ch_type_t notif_ch_type = NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem);
+
+    switch(notif_ch_type){
+        
+        case NOTIF_C_CALLBACKS:
+            if(!notif_chain_lookup_by_name_cb_fn){
+                printf("notif_chain_lookup_by_name_cb CB not registered\n");
+                return false;
+            }
+            notif_chain = (notif_chain_lookup_by_name_cb_fn)(notif_chain_name);
+            if(!notif_chain){
+                printf("Appln dont have Notif Chain with name %s\n", 
+                    notif_chain_name);
+                return false;
+            }
+            notif_chain_deregister_chain_element(notif_chain, notif_chain_elem);
+            return true;
+        case NOTIF_C_MSG_Q:
+        case NOTIF_C_AF_UNIX:
+        case NOTIF_C_INET_SOCKETS:
+        break;
+        case NOTIF_C_ANY:
+        case NOTIF_C_NOT_KNOWN:
+            return false;
+        default:
+            return false;
+    }
+    return true;
+}
