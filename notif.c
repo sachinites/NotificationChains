@@ -60,30 +60,6 @@ notif_chain_init(notif_chain_t *notif_chain,
     notif_chain->print_cb = print_cb;
     assert(notif_chain_lookup_by_name_cb_fn == NULL);
     notif_chain_lookup_by_name_cb_fn = _notif_chain_lookup_by_name_cb_fn;
-
-#if 0
-    if(ip_addr){
-        
-        /*Open UDP socket*/
-        notif_chain->sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP );
-        
-        if(notif_chain->sock_fd == -1){
-            printf("Notification Chain %s Socket Creation Failed, error = %d\n",
-                chain_name, errno);
-            return;
-        }
-
-        notif_chain_addr.sin_family      = AF_INET;
-        notif_chain_addr.sin_port        = udp_port_no;
-        notif_chain_addr.sin_addr.s_addr = INADDR_ANY; /*Will change later*/
-        if (bind(notif_chain->sock_fd, 
-            (struct sockaddr *)&notif_chain_addr,
-            sizeof(struct sockaddr)) == -1) {
-            printf("Error : socket bind failed for notif chain %s\n", chain_name);
-            return;
-        }
-    }
-#endif
 }
 
 void
@@ -154,11 +130,21 @@ bool
 notif_chain_register_chain_element(notif_chain_t *notif_chain,
                 notif_chain_elem_t *notif_chain_elem){
 
+    notif_chain_elem_t *new_notif_chain_elem = 
+        calloc(1,sizeof(notif_chain_elem_t));
+   
+    if(!new_notif_chain_elem) return false;
+
+    memcpy(new_notif_chain_elem, notif_chain_elem, 
+        sizeof(notif_chain_elem_t));
+
     notif_chain_elem_t *head = notif_chain->head;
-    notif_chain->head = notif_chain_elem;
-    notif_chain_elem->prev = 0;
-    notif_chain_elem->next = head;
-    head->prev = notif_chain_elem;
+    notif_chain->head = new_notif_chain_elem;
+    new_notif_chain_elem->prev = 0;
+    new_notif_chain_elem->next = head;
+    if(head)
+        head->prev = new_notif_chain_elem;
+    return true;
 }
 
 bool
@@ -301,6 +287,7 @@ notif_chain_invoke(notif_chain_t *notif_chain,
     ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain, notif_chain_elem_curr){
 
         if(notif_chain->comp_cb &&
+           notif_chain_elem &&
                 notif_chain->comp_cb(notif_chain_elem_curr->data.app_key_data,
                     notif_chain_elem_curr->data.app_key_data_size,
                     notif_chain_elem->data.app_key_data,
@@ -309,13 +296,14 @@ notif_chain_invoke(notif_chain_t *notif_chain,
             continue;
         }
 
-        notif_chain_elem_curr->data.is_alloc_app_data_to_notify = 
-            notif_chain_elem->data.is_alloc_app_data_to_notify;
-        notif_chain_elem_curr->data.app_data_to_notify = 
-            notif_chain_elem->data.app_data_to_notify;
-        notif_chain_elem_curr->data.app_data_to_notify_size =
-            notif_chain_elem->data.app_data_to_notify_size;
-
+        if(notif_chain_elem){
+            notif_chain_elem_curr->data.is_alloc_app_data_to_notify = 
+                notif_chain_elem->data.is_alloc_app_data_to_notify;
+            notif_chain_elem_curr->data.app_data_to_notify = 
+                notif_chain_elem->data.app_data_to_notify;
+            notif_chain_elem_curr->data.app_data_to_notify_size =
+                notif_chain_elem->data.app_data_to_notify_size;
+        }
         notif_chain_invoke_communication_channel(
                 notif_chain_elem_curr);
 

@@ -57,13 +57,17 @@ rt_add_new_rt_entry(rt_table_t *rt_table,
 
     strncpy(rt_entry->dest_ip, dest_ip, sizeof(rt_entry->dest_ip));
     rt_entry->mask = mask;
-    strncpy(rt_entry->gw_ip, gw_ip, sizeof(rt_entry->gw_ip));
-    strncpy(rt_entry->oif, oif, sizeof(rt_entry->oif));
+    
+    if(gw_ip)
+        strncpy(rt_entry->gw_ip, gw_ip, sizeof(rt_entry->gw_ip));
+    if(oif)
+        strncpy(rt_entry->oif, oif, sizeof(rt_entry->oif));
 
     head = rt_table->head;
     rt_table->head = rt_entry;
     rt_entry->prev = 0;
     rt_entry->next = head;
+    if(head)
     head->prev = rt_entry;
     return true;
 }

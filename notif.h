@@ -98,9 +98,6 @@ typedef struct notif_chain_comm_channel_{
 #define NOTIF_CHAIN_ELEM_INET_SOCKFD(notif_chain_comm_channel_ptr)      \
     (notif_chain_comm_channel_ptr->u.inet_skt_info.sock_fd)
 
-#define NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem_ptr)                     \
-    (notif_chain_elem_ptr->notif_chain_comm_channel.notif_ch_type)
-
 struct notif_chain_elem_{
 
     notif_chain_elem_t *prev;
@@ -126,6 +123,9 @@ struct notif_chain_elem_{
     notif_chain_comm_channel_t 
         notif_chain_comm_channel;
 };
+
+#define NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem_ptr)                     \
+    (notif_chain_elem_ptr->notif_chain_comm_channel.notif_ch_type)
 
 struct notif_chain_{
 
