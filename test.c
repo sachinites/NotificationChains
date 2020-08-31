@@ -31,10 +31,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
-#include "notif.h"
-#include "rt.h"
 #include <sys/types.h> /*for pid_t*/
 #include <unistd.h>    /*for getpid()*/
+#include <pthread.h>
+#include "notif.h"
+#include "rt.h"
+
+extern void
+create_subscriber_thread();
 
 static notif_chain_t notif_chain;
 
@@ -55,6 +59,7 @@ main_menu(rt_table_t *rt){
         printf("2. Update rt table entry\n");
         printf("3. Delete rt table entry\n");
         printf("4. Dump rt table\n");
+        printf("5. Notif Chain Dump\n");
         printf("Enter Choice :");
         choice = 0;
         scanf("%d", &choice);
@@ -78,7 +83,26 @@ main_menu(rt_table_t *rt){
                         printf("Error : Could not add an entry\n");
                     }
                     /*Invoke Notif Chain*/
-                    notif_chain_invoke(&notif_chain, 0);
+                    notif_chain_elem_t notif_chain_elem;
+                    memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
+                    notif_chain_elem.client_pid = getpid();
+                    notif_chain_elem.notif_code = NOTIF_C_CREATE;
+                    rt_entry_keys_t rt_entry_keys;
+                    strncpy(rt_entry_keys.dest, dest, 16);
+                    rt_entry_keys.mask = mask;
+                    notif_chain_elem.data.app_key_data = (void *)&rt_entry_keys;
+                    notif_chain_elem.data.app_key_data_size = sizeof(rt_entry_keys_t);
+                    notif_chain_elem.data.is_alloc_app_data_to_notify = false;
+                    char data[256];
+                    int rc = 0;
+                    memset(data, 0, sizeof(256));
+                    strncpy(data, oif, sizeof(oif));
+                    rc = sizeof(oif);
+                    strncpy(data + rc, gw, sizeof(gw));
+                    rc += sizeof(gw);
+                    notif_chain_elem.data.app_data_to_notify = data;
+                    notif_chain_elem.data.app_data_to_notify_size = rc;
+                    notif_chain_invoke(&notif_chain, &notif_chain_elem);
                 }  
             break;
             case 2:
@@ -86,46 +110,89 @@ main_menu(rt_table_t *rt){
             case 4:
                 rt_dump_rt_table(rt);
                 break;
+            case 5:
+               notif_chain_dump(&notif_chain);
+               break;
             default:
                 exit(0);
         }
     }
 }
 
+/* Publisher has to register the callback function
+ * with the library so that library can get the
+ * notif_chain object created by Publisher by name*/
 static notif_chain_t *
 get_notif_chain(char *notif_chain_name){
 
+    /* Publisher maintains only one notif chain
+     * in this example, but there is no such restriction
+     * , publisher can create as many notification
+     * chains as he wants*/
     return &notif_chain;    
 }
 
-static void
-test_cb(void *data, uint32_t data_size){
+int
+rt_entry_comp_fn(void *key_data1, 
+                 uint32_t key_data1_size, 
+                 void *key_data2, 
+                 uint32_t key_data2_size){
 
-    printf("%s() invoked\n", __FUNCTION__);
+    rt_entry_keys_t *rt_entry_keys1 = (rt_entry_keys_t *)key_data1;
+    rt_entry_keys_t *rt_entry_keys2 = (rt_entry_keys_t *)key_data2;
+
+    if(strncmp(rt_entry_keys1->dest, rt_entry_keys2->dest, 16) == 0 &&
+        rt_entry_keys1->mask == rt_entry_keys2->mask){
+        return 0;
+    }
+
+    return -1;
+}
+
+static char *
+rt_entry_keys_print_fn(void *keys, uint32_t key_size,
+                      char *output_buff, uint32_t buff_size){
+
+    rt_entry_keys_t *rt_entry_keys = (rt_entry_keys_t *)keys;
+    sprintf(output_buff, "Dest = %s/%d\n", 
+        rt_entry_keys->dest, rt_entry_keys->mask);
+    return output_buff;
 }
 
 int
 main(int argc, char **argv){
 
+    /*Published is in-charge of the Data source
+     * i.e. Routing Table in this example*/
     rt_table_t rt;
     rt_init_rt_table(&rt);
 
-    /*Create a notif Chain for the publisher*/
+    /* Publisher is creating a Notification Chain for
+     * its data Source*/
     notif_chain_init(&notif_chain,
-        "rt table update",
-        0, 0, 
+        "notif_chain_rt_table",
+        rt_entry_comp_fn,
+        rt_entry_keys_print_fn,
         get_notif_chain);
 
-    /*Do registration with Notification Chain.
-     * This code acts as a client/subscriber code*/
-    notif_chain_elem_t notif_chain_elem;
-    memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
-    notif_chain_elem.client_pid = getpid();
-    notif_chain_comm_channel_t *
-        notif_chain_comm_channel = &notif_chain_elem.notif_chain_comm_channel;
-    notif_chain_comm_channel->notif_ch_type = NOTIF_C_CALLBACKS;
-    NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel) = test_cb;
-    notif_chain_subscribe("rt table update", &notif_chain_elem);
+    /* Publisher needs to start the the separate thread so
+     * that it can listen to remote subscriber's request.
+     * Remote subscribers are those which runs as a separate process
+     * on same or remote machine*/
+
+    /* ToDO 
+     *
+     * Start a listener thread here
+     * 
+     * */
+
+    /* thread a client here. We will create one of the thread 
+     * as a subscriber to test notification chains using callbacks.
+     * Notif chains uses callbacks to notify the subscribers only
+     * for local subscribers i.e. subscribers running as a thread
+     * of publisher process*/
+
+     create_subscriber_thread();
 
     /* Start the publisher database
      * mgmt Operations*/

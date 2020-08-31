@@ -33,12 +33,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 
 typedef struct notif_chain_elem_ notif_chain_elem_t;
 typedef struct notif_chain_ notif_chain_t;
 typedef int (*notif_chain_comp_cb)(void *data1, uint32_t data_size1,
                                    void *data2, uint32_t data_size2);
-typedef void (*notif_chain_app_cb)(void *data, uint32_t data_size);
+typedef void (*notif_chain_app_cb)(notif_chain_elem_t *notif_chain_elem);
 typedef char * (*app_key_data_print_cb)(void *data,
                         uint32_t size,
                         char *outbuffer,
@@ -56,6 +57,68 @@ typedef enum notif_ch_type_{
     NOTIF_C_INET_SOCKETS,
     NOTIF_C_NOT_KNOWN
 } notif_ch_type_t;
+
+static inline char *
+notif_chain_get_str_notif_ch_type(
+    notif_ch_type_t notif_ch_type){
+
+    switch(notif_ch_type){
+
+        case NOTIF_C_ANY:
+            return "NOTIF_C_ANY";
+        case NOTIF_C_CALLBACKS:
+            return "NOTIF_C_CALLBACKS";
+        case NOTIF_C_MSG_Q:
+            return "NOTIF_C_MSG_Q";
+        case NOTIF_C_AF_UNIX:
+            return "NOTIF_C_AF_UNIX";
+        case NOTIF_C_INET_SOCKETS:
+            return "NOTIF_C_INET_SOCKETS";
+        case NOTIF_C_NOT_KNOWN:
+            return "NOTIF_C_NOT_KNOWN";
+        default:
+            assert(0);
+    }
+}
+
+typedef enum notif_ch_notify_opcode_{
+
+    /* Used by Publisher to tell 
+     * subscriber the nature of 
+     * Update*/
+    NOTIF_C_CREATE,
+    NOTIF_C_UPDATE,
+    NOTIF_C_DELETE,
+    /* Used by Subscriber to tell
+     * publisher about the type
+     * of subscription*/
+    NOTIF_C_SUBSCRIBE,
+    NOTIF_C_UNSUBSCRIBE,
+    NOTIF_C_UNKNOWN
+} notif_ch_notify_opcode_t;
+
+static inline char *
+notif_chain_get_str_notify_opcode(
+    notif_ch_notify_opcode_t notif_opcode){
+
+    switch(notif_opcode){
+
+        case NOTIF_C_CREATE:
+            return "NOTIF_C_CREATE";
+        case NOTIF_C_UPDATE:
+            return "NOTIF_C_UPDATE";
+        case NOTIF_C_DELETE:
+            return "NOTIF_C_DELETE";
+        case NOTIF_C_SUBSCRIBE:
+            return "NOTIF_C_SUBSCRIBE";
+        case NOTIF_C_UNSUBSCRIBE:
+            return "NOTIF_C_UNSUBSCRIBE";
+        case NOTIF_C_UNKNOWN:
+            return "NOTIF_C_UNKNOWN";
+        default:
+            assert(0);
+    }
+}
 
 typedef struct notif_chain_comm_channel_{
     
@@ -104,7 +167,8 @@ struct notif_chain_elem_{
     notif_chain_elem_t *next;
     
     pid_t client_pid;
-
+    notif_ch_notify_opcode_t notif_code;
+    
     struct {
         /* Key data to decide which 
          * subscriber to notify
@@ -141,16 +205,6 @@ struct notif_chain_{
      * notif_chain_elem_t
      * */
     notif_chain_elem_t *head;
-
-#if 0
-    /* Every notif Chain would listen on
-     * INET socket so that client processes
-     * (local or remote could register or
-     * de-register)*/
-    uint32_t ip_addr;
-    uint32_t udp_port_no;
-    int sock_fd;
-#endif
 };
 
 void
@@ -190,30 +244,9 @@ void
 notif_chain_release_communication_channel_resources(
                 notif_chain_comm_channel_t *channel);
 
-static inline void
+void
 notif_chain_elem_remove(notif_chain_t *notif_chain,
-                notif_chain_elem_t *notif_chain_elem){
-
-    if(!notif_chain_elem->prev){
-        if(notif_chain_elem->next){
-            notif_chain_elem->next->prev = NULL;
-            notif_chain->head = notif_chain_elem->next;
-            notif_chain_elem->next = 0;
-            return;
-        }
-        return;
-    }
-    if(!notif_chain_elem->next){
-        notif_chain_elem->prev->next = NULL;
-        notif_chain_elem->prev = NULL;
-        return;
-    }
-
-    notif_chain_elem->prev->next = notif_chain_elem->next;
-    notif_chain_elem->next->prev = notif_chain_elem->prev;
-    notif_chain_elem->prev = 0;
-    notif_chain_elem->next = 0;
-}
+                notif_chain_elem_t *notif_chain_elem);
 
 bool
 notif_chain_subscribe(char *notif_name, 
@@ -224,11 +257,11 @@ notif_chain_unsubscribe(char *notif_name,
                       notif_chain_elem_t *notif_chain_elem);
 
 #define ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain_ptr, notif_chain_elem_ptr)  \
-{\
-    notif_chain_elem_t *_next_notif_chain_elem;\
-    for(notif_chain_elem_ptr = notif_chain_ptr->head; \
-        notif_chain_elem_ptr; \
-        notif_chain_elem_ptr = _next_notif_chain_elem) { \
+{                                                                         \
+    notif_chain_elem_t *_next_notif_chain_elem;                           \
+    for(notif_chain_elem_ptr = notif_chain_ptr->head;                     \
+        notif_chain_elem_ptr;                                             \
+        notif_chain_elem_ptr = _next_notif_chain_elem) {                  \
         _next_notif_chain_elem = notif_chain_elem_ptr->next;
 
 #define ITERTAE_NOTIF_CHAIN_END(notif_chain_ptr, notif_chain_elem_ptr)  }}

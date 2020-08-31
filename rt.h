@@ -33,10 +33,18 @@
 
 #include <stdbool.h>
 
+typedef struct rt_entry_keys_{
+
+    char dest[16];
+    char mask;
+} rt_entry_keys_t;
+
 typedef struct rt_entry_{
 
-    char dest_ip[16];
-    char mask;
+    /* A Structure which represnets only the keys of the
+     * Routing Table.*/
+    rt_entry_keys_t rt_entry_keys;
+
     char gw_ip[16];
     char oif[32];
     struct rt_entry_ *prev;

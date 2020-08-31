@@ -42,7 +42,7 @@ rt_init_rt_table(rt_table_t *rt_table){
 
 bool
 rt_add_new_rt_entry(rt_table_t *rt_table,
-                    char *dest_ip, 
+                    char *dest, 
                     char mask, 
                     char *gw_ip, 
                     char *oif){
@@ -55,8 +55,8 @@ rt_add_new_rt_entry(rt_table_t *rt_table,
     if(!rt_entry)
         return false;
 
-    strncpy(rt_entry->dest_ip, dest_ip, sizeof(rt_entry->dest_ip));
-    rt_entry->mask = mask;
+    strncpy(rt_entry->rt_entry_keys.dest, dest, sizeof(rt_entry->rt_entry_keys.dest));
+    rt_entry->rt_entry_keys.mask = mask;
     
     if(gw_ip)
         strncpy(rt_entry->gw_ip, gw_ip, sizeof(rt_entry->gw_ip));
@@ -74,14 +74,15 @@ rt_add_new_rt_entry(rt_table_t *rt_table,
 
 bool
 rt_delete_rt_entry(rt_table_t *rt_table,
-    char *dest_ip, char mask){
+    char *dest, char mask){
 
     rt_entry_t *rt_entry = NULL;
 
     ITERTAE_RT_TABLE_BEGIN(rt_table, rt_entry){
     
-        if(strncmp(rt_entry->dest_ip, dest_ip, sizeof(rt_entry->dest_ip)) == 0 &&
-            rt_entry->mask == mask){
+        if(strncmp(rt_entry->rt_entry_keys.dest, 
+            dest, sizeof(rt_entry->rt_entry_keys.dest)) == 0 &&
+            rt_entry->rt_entry_keys.mask == mask){
 
             rt_entry_remove(rt_table, rt_entry);
             free(rt_entry);
@@ -94,7 +95,7 @@ rt_delete_rt_entry(rt_table_t *rt_table,
 
 bool
 rt_update_rt_entry(rt_table_t *rt_table,
-                  char *dest_ip, 
+                  char *dest, 
                   char mask, 
                   char *new_gw_ip, 
                   char *new_oif){
@@ -122,8 +123,8 @@ rt_dump_rt_table(rt_table_t *rt_table){
     ITERTAE_RT_TABLE_BEGIN(rt_table, rt_entry){
 
         printf("%-20s %-4d %-20s %s\n",
-            rt_entry->dest_ip, 
-            rt_entry->mask, 
+            rt_entry->rt_entry_keys.dest, 
+            rt_entry->rt_entry_keys.mask, 
             rt_entry->gw_ip,
             rt_entry->oif);
     } ITERTAE_RT_TABLE_END(rt_tabl, rt_entry);
