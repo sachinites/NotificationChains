@@ -86,14 +86,16 @@ typedef enum notif_ch_notify_opcode_{
     /* Used by Publisher to tell 
      * subscriber the nature of 
      * Update*/
-    NOTIF_C_CREATE,
-    NOTIF_C_UPDATE,
-    NOTIF_C_DELETE,
+    PUB_TO_SUBS_NOTIF_C_CREATE,
+    PUB_TO_SUBS_NOTIF_C_UPDATE,
+    PUB_TO_SUBS_NOTIF_C_DELETE,
     /* Used by Subscriber to tell
      * publisher about the type
      * of subscription*/
-    NOTIF_C_SUBSCRIBE,
-    NOTIF_C_UNSUBSCRIBE,
+    SUBS_TO_PUB_NOTIF_C_SUBSCRIBE,
+    SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE,
+    SUBS_TO_PUB_NOTIFY_C_NOTIFY_ALL,
+    SUBS_TO_PUB_NOTIFY_C_CLIENT_UNSUBSCRIBE_ALL,
     NOTIF_C_UNKNOWN
 } notif_ch_notify_opcode_t;
 
@@ -103,16 +105,20 @@ notif_chain_get_str_notify_opcode(
 
     switch(notif_opcode){
 
-        case NOTIF_C_CREATE:
-            return "NOTIF_C_CREATE";
-        case NOTIF_C_UPDATE:
-            return "NOTIF_C_UPDATE";
-        case NOTIF_C_DELETE:
-            return "NOTIF_C_DELETE";
-        case NOTIF_C_SUBSCRIBE:
-            return "NOTIF_C_SUBSCRIBE";
-        case NOTIF_C_UNSUBSCRIBE:
-            return "NOTIF_C_UNSUBSCRIBE";
+        case PUB_TO_SUBS_NOTIF_C_CREATE:
+            return "PUB_TO_SUBS_NOTIF_C_CREATE";
+        case PUB_TO_SUBS_NOTIF_C_UPDATE:
+            return "PUB_TO_SUBS_NOTIF_C_UPDATE";
+        case PUB_TO_SUBS_NOTIF_C_DELETE:
+            return "PUB_TO_SUBS_NOTIF_C_DELETE";
+        case SUBS_TO_PUB_NOTIF_C_SUBSCRIBE:
+            return "SUBS_TO_PUB_NOTIF_C_SUBSCRIBE";
+        case SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE:
+            return "SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE";
+        case SUBS_TO_PUB_NOTIFY_C_NOTIFY_ALL:
+            return "SUBS_TO_PUB_NOTIFY_C_NOTIFY_ALL";
+        case SUBS_TO_PUB_NOTIFY_C_CLIENT_UNSUBSCRIBE_ALL:
+            return "SUBS_TO_PUB_NOTIFY_C_CLIENT_UNSUBSCRIBE_ALL";
         case NOTIF_C_UNKNOWN:
             return "NOTIF_C_UNKNOWN";
         default:
@@ -191,6 +197,16 @@ struct notif_chain_elem_{
 #define NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem_ptr)                     \
     (notif_chain_elem_ptr->notif_chain_comm_channel.notif_ch_type)
 
+typedef struct notif_chain_subscriber_msg_format_ {
+
+    notif_ch_notify_opcode_t notif_ch_notify_opcode;
+    pid_t client_pid;
+    notif_ch_notify_opcode_t notif_code;
+    notif_chain_comm_channel_t notif_chain_comm_channel;
+    uint32_t subs_data_size;
+    char subs_data[0];
+} notif_chain_subscriber_msg_format_t;
+
 struct notif_chain_{
 
     char name[32];
@@ -255,6 +271,12 @@ notif_chain_subscribe(char *notif_name,
 bool
 notif_chain_unsubscribe(char *notif_name, 
                       notif_chain_elem_t *notif_chain_elem);
+
+bool
+notif_chain_process_remote_subscriber_request(
+                     char *notif_chain_name,
+                     char *subs_msg,
+                     uint32_t subs_msg_size);
 
 #define ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain_ptr, notif_chain_elem_ptr)  \
 {                                                                         \

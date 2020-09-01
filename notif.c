@@ -456,3 +456,88 @@ notif_chain_elem_remove(notif_chain_t *notif_chain,
     notif_chain_elem->next = 0;
 }
 
+static bool
+notif_chain_build_notif_chain_elem_from_subs_msg(
+        char *subs_msg, 
+        uint32_t subs_msg_size,
+        notif_chain_elem_t *notif_chain_elem_template){ // empty template
+
+    memset(notif_chain_elem_template, 0, sizeof(notif_chain_elem_t));
+    
+    notif_chain_subscriber_msg_format_t *
+        notif_chain_subscriber_msg_format = 
+        (notif_chain_subscriber_msg_format_t *)subs_msg;
+
+    notif_chain_elem_template->notif_code = 
+        notif_chain_subscriber_msg_format->notif_ch_notify_opcode;
+
+    notif_chain_elem_template->client_pid = 
+        notif_chain_subscriber_msg_format->client_pid;
+
+    memcpy(&notif_chain_elem_template->notif_chain_comm_channel,
+           &notif_chain_subscriber_msg_format->notif_chain_comm_channel,
+           sizeof(notif_chain_comm_channel_t));
+
+    if(notif_chain_subscriber_msg_format->subs_data &&
+        notif_chain_subscriber_msg_format->subs_data_size){
+        notif_chain_elem_template->data.app_key_data = 
+            calloc(1, notif_chain_subscriber_msg_format->subs_data_size);
+        memcpy(notif_chain_elem_template->data.app_key_data,
+            notif_chain_subscriber_msg_format->subs_data,
+            notif_chain_subscriber_msg_format->subs_data_size);
+    }
+    return true;
+}
+
+
+bool
+notif_chain_process_remote_subscriber_request(
+        char *notif_chain_name,
+        char *subs_msg, 
+        uint32_t subs_msg_size){
+
+    bool res;
+    notif_ch_type_t notif_ch_type;
+    notif_ch_notify_opcode_t notif_code;
+    notif_chain_elem_t notif_chain_elem;
+
+    res = false;
+    notif_chain_build_notif_chain_elem_from_subs_msg
+                (subs_msg, subs_msg_size, &notif_chain_elem);
+
+    notif_ch_type = NOTIF_CHAIN_ELEM_TYPE((&notif_chain_elem));
+
+    assert(notif_ch_type != NOTIF_C_CALLBACKS);
+
+    notif_code = notif_chain_elem.notif_code;
+
+    if(!notif_chain_lookup_by_name_cb_fn){
+        printf("notif_chain_lookup_by_name_cb CB not registered\n");
+        return false;
+    }
+
+    switch(notif_code){
+
+        case PUB_TO_SUBS_NOTIF_C_CREATE:
+        case PUB_TO_SUBS_NOTIF_C_UPDATE:
+        case PUB_TO_SUBS_NOTIF_C_DELETE:
+            assert(0);
+        case SUBS_TO_PUB_NOTIF_C_SUBSCRIBE:
+            notif_chain_subscribe(notif_chain_name,
+                &notif_chain_elem);
+        break;
+        case SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE:
+            notif_chain_unsubscribe(notif_chain_name,
+                &notif_chain_elem);
+        break;
+        case SUBS_TO_PUB_NOTIFY_C_NOTIFY_ALL:
+        break;
+        case SUBS_TO_PUB_NOTIFY_C_CLIENT_UNSUBSCRIBE_ALL:
+        break;
+        case NOTIF_C_UNKNOWN:
+        default:
+            return false;
+    }
+}
+
+    

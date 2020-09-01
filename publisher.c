@@ -36,9 +36,14 @@
 #include <pthread.h>
 #include "notif.h"
 #include "rt.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 extern void
 create_subscriber_thread();
+
+void network_start_pkt_receiver_thread(void );
 
 static notif_chain_t notif_chain;
 
@@ -86,7 +91,7 @@ main_menu(rt_table_t *rt){
                     notif_chain_elem_t notif_chain_elem;
                     memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
                     notif_chain_elem.client_pid = getpid();
-                    notif_chain_elem.notif_code = NOTIF_C_CREATE;
+                    notif_chain_elem.notif_code = PUB_TO_SUBS_NOTIF_C_CREATE;
                     rt_entry_keys_t rt_entry_keys;
                     strncpy(rt_entry_keys.dest, dest, 16);
                     rt_entry_keys.mask = mask;
@@ -194,8 +199,78 @@ main(int argc, char **argv){
 
      create_subscriber_thread();
 
+    /*Start the publisher pkt receiever thread*/
+     network_start_pkt_receiver_thread();
+
     /* Start the publisher database
      * mgmt Operations*/
     main_menu(&rt);
     return 0;
 }
+
+#define MAX_PACKET_BUFFER_SIZE 1024
+
+static void *
+_network_start_pkt_receiver_thread(void *arg){
+
+    int udp_sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+
+    if(udp_sock_fd == -1){
+        printf("Socket Creation Failed\n");
+        return 0;   
+    }
+
+    struct sockaddr_in publisher_addr;
+    publisher_addr.sin_family      = AF_INET;
+    publisher_addr.sin_port        = 2000;
+    publisher_addr.sin_addr.s_addr = INADDR_ANY;
+    if (bind(udp_sock_fd, (struct sockaddr *)&publisher_addr, sizeof(struct sockaddr)) == -1) {
+        printf("Error : socket bind failed\n");
+        return 0;
+    }
+
+    fd_set active_sock_fd_set,
+           backup_sock_fd_set;
+
+    FD_ZERO(&active_sock_fd_set);
+    FD_ZERO(&backup_sock_fd_set);
+
+    struct sockaddr_in subscriber_addr;
+    FD_SET(udp_sock_fd, &backup_sock_fd_set);
+    int bytes_recvd, addr_len;
+    char recv_buffer[MAX_PACKET_BUFFER_SIZE];
+
+    while(1){
+
+        memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
+        
+        select(udp_sock_fd + 1, &active_sock_fd_set, NULL, NULL, NULL);
+
+        if(FD_ISSET(udp_sock_fd, &active_sock_fd_set)){
+
+            memset(recv_buffer, 0, MAX_PACKET_BUFFER_SIZE);
+            bytes_recvd = recvfrom(udp_sock_fd, (char *)recv_buffer,
+                    MAX_PACKET_BUFFER_SIZE, 0, (struct sockaddr *)&subscriber_addr, &addr_len);
+
+            notif_chain_process_remote_subscriber_request(
+                    recv_buffer, recv_buffer + 32, bytes_recvd - 32);
+        }
+    }
+    return 0;
+}
+
+/*Pkt receiever thread*/
+void
+network_start_pkt_receiver_thread( void ){
+
+    pthread_attr_t attr;
+    pthread_t recv_pkt_thread;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    pthread_create(&recv_pkt_thread, &attr,
+            _network_start_pkt_receiver_thread,
+            0);
+}
+
