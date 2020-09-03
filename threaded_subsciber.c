@@ -44,8 +44,9 @@ create_subscriber_thread();
 static void
 test_cb(notif_chain_elem_t *notif_chain_elem){
 
-    printf("code = %s, %s\n", 
+    printf("code = %s, client id = %u , %s\n", 
         notif_chain_get_str_notify_opcode(notif_chain_elem->notif_code),
+        notif_chain_elem->client_id,
         (char *)notif_chain_elem->data.app_data_to_notify);
 }
 
@@ -54,6 +55,12 @@ subscriber_thread_fn(void *arg){
 
    
     uint32_t client_id = (uint32_t)arg;
+
+    if(client_id == 1){
+        
+        notif_chain_subscribe_by_callback("notif_chain_rt_table", 0, 0, client_id, test_cb);
+        pause();
+    }
     /* Do registration with Notification Chain.
      * This code acts as a client/subscriber code*/
     rt_entry_keys_t rt_entry_keys;
@@ -61,27 +68,27 @@ subscriber_thread_fn(void *arg){
 
     strncpy(rt_entry_keys.dest, "122.1.1.1", 16);
     rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
     strncpy(rt_entry_keys.dest, "122.1.1.2", 16);
     rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
     strncpy(rt_entry_keys.dest, "122.1.1.3", 16);
     rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
     strncpy(rt_entry_keys.dest, "122.1.1.4", 16);
     rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
     strncpy(rt_entry_keys.dest, "122.1.1.5", 16);
     rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
     strncpy(rt_entry_keys.dest, "122.1.1.6", 16);
     rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
     pause();
 }

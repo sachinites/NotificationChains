@@ -258,6 +258,7 @@ notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
 
 static void
 notif_chain_invoke_communication_channel(
+        notif_chain_t *notif_chain,
         notif_chain_elem_t *notif_chain_elem){
 
     notif_chain_comm_channel_t *
@@ -296,6 +297,10 @@ notif_chain_invoke(notif_chain_t *notif_chain,
 
         if(notif_chain->comp_cb &&
            notif_chain_elem &&
+           notif_chain_elem->data.app_key_data &&
+           notif_chain_elem->data.app_key_data_size &&
+           notif_chain_elem_curr->data.app_key_data &&
+           notif_chain_elem_curr->data.app_key_data_size &&
                 notif_chain->comp_cb(notif_chain_elem_curr->data.app_key_data,
                     notif_chain_elem_curr->data.app_key_data_size,
                     notif_chain_elem->data.app_key_data,
@@ -317,6 +322,7 @@ notif_chain_invoke(notif_chain_t *notif_chain,
                 notif_chain_elem->data.app_data_to_notify_size;
         }
         notif_chain_invoke_communication_channel(
+                notif_chain,
                 notif_chain_elem_curr);
 
     } ITERTAE_NOTIF_CHAIN_END(notif_chain, notif_chain_elem_curr);
@@ -470,7 +476,7 @@ notif_chain_build_notif_chain_elem_from_subs_msg(
         (notif_chain_subscriber_msg_format_t *)subs_msg;
 
     notif_chain_elem_template->notif_code = 
-        notif_chain_subscriber_msg_format->notif_ch_notify_opcode;
+        notif_chain_subscriber_msg_format->notif_code;
 
     notif_chain_elem_template->client_id = 
         notif_chain_subscriber_msg_format->client_id;
@@ -547,8 +553,8 @@ notif_chain_subscribe_by_callback(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
-        notif_chain_app_cb cb,
-        uint32_t client_id){
+        uint32_t client_id,
+        notif_chain_app_cb cb){
 
     notif_chain_elem_t notif_chain_elem;
     memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
@@ -568,9 +574,44 @@ notif_chain_subscribe_by_inet_skt(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
+        uint32_t client_id,
+        char *subs_addr,
+        uint16_t subs_port_no,
+        uint16_t protocol_no,
         char *publisher_addr,
         uint16_t publisher_port_no){
 
+    uint32_t msg_size = NOTIF_NAME_SIZE +
+                        sizeof(notif_chain_subscriber_msg_format_t) +
+                        key_size;
+
+    char *msg = calloc(1, msg_size);
+
+    strncpy(msg, notif_chain_name, NOTIF_NAME_SIZE);
+
+    notif_chain_subscriber_msg_format_t *
+        notif_chain_subscriber_msg_format = 
+        (notif_chain_subscriber_msg_format_t *)(msg + NOTIF_NAME_SIZE);
+
+    notif_chain_subscriber_msg_format->client_id = client_id;
+
+    notif_chain_subscriber_msg_format->notif_code =
+        SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
+
+    notif_chain_comm_channel_t *notif_chain_comm_channel = 
+        &notif_chain_subscriber_msg_format->notif_chain_comm_channel;
+
+    notif_chain_comm_channel->notif_ch_type = NOTIF_C_INET_SOCKETS;
+    
+    strncpy(NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel),
+            subs_addr, 16);
+    NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel) = subs_port_no;
+    NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel) = protocol_no;
+
+    int rc = notif_chain_send_msg_to_publisher(publisher_addr, 
+                                      publisher_port_no,
+                                      msg, msg_size);
+    free(msg);
     return true;
 }
 
@@ -579,7 +620,10 @@ notif_chain_subscribe_by_unix_skt(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
-        char *publisher_unix_skt_name){
+        uint32_t client_id,
+        char *subs_unix_skt_name,
+        char *publisher_addr,
+        uint16_t publisher_port_no){
 
     return true;
 }
@@ -589,8 +633,63 @@ notif_chain_subscribe_msgq(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
-        char *publisher_msgq_name){
+        uint32_t client_id,
+        char *subs_msgq_name,
+        char *publisher_addr,
+        uint16_t publisher_port_no){
 
     return true;
+}
+
+static int
+notif_chain_send_udp_msg(char *dest_ip_addr,
+                         uint16_t dest_port_no,
+                         char *msg,
+                         uint32_t msg_size){
+
+    struct sockaddr_in dest;
+
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(dest_port_no);
+    struct hostent *host = (struct hostent *)gethostbyname(dest_ip_addr);
+    dest.sin_addr = *((struct in_addr *)host->h_addr);
+    int addr_len = sizeof(struct sockaddr);
+
+    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+    if(sockfd == -1){
+        printf("socket creation failed, errno = %d\n", errno);
+        return 0;
+    }
+
+    int rc = sendto(sockfd, msg, msg_size,
+                    0, (struct sockaddr *)&dest, 
+                    sizeof(struct sockaddr));
+    close(sockfd);
+    return rc; 
+}
+
+int
+notif_chain_send_msg_to_publisher(char *publisher_addr,
+                                  uint16_t publisher_port_no,
+                                  char *msg,
+                                  uint32_t msg_size){
+
+    return notif_chain_send_udp_msg(publisher_addr, 
+                                    publisher_port_no,
+                                    msg,
+                                    msg_size);
+}
+
+int
+notif_chain_send_msg_to_subscriber(char *subscriber_addr,
+                                   uint16_t subscriber_port_no,
+                                   char *msg,
+                                   uint32_t msg_size){
+    
+    return notif_chain_send_udp_msg(subscriber_addr,
+                                    subscriber_port_no,
+                                    msg,
+                                    msg_size);
 }
 

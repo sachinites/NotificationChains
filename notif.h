@@ -49,6 +49,8 @@ typedef char * (*app_key_data_print_cb)(void *data,
 typedef notif_chain_t * 
     (*notif_chain_lookup_by_name_cb)(char *notif_chain_name);
 
+#define NOTIF_NAME_SIZE 32
+
 typedef enum notif_ch_type_{
 
     NOTIF_C_ANY,
@@ -135,12 +137,12 @@ typedef struct notif_chain_comm_channel_{
         notif_chain_app_cb app_cb;
         /*Via MsgQ*/
         struct {
-            char msgQ_name[32];
+            char msgQ_name[NOTIF_NAME_SIZE];
         } mq;
 
         /*Via UNIX Sockets*/
         struct {
-            char unix_skt_name[32];
+            char unix_skt_name[NOTIF_NAME_SIZE];
         } unix_skt;
         /*Via INET_SOCKETS*/
         struct {
@@ -148,7 +150,6 @@ typedef struct notif_chain_comm_channel_{
             uint32_t ip_addr;
             uint8_t port_no;
             uint8_t protocol_no; /*UDP or TCP or simply IP*/
-            int sock_fd;
         } inet_skt_info;
     }u;
 } notif_chain_comm_channel_t;
@@ -200,7 +201,6 @@ struct notif_chain_elem_{
 
 typedef struct notif_chain_subscriber_msg_format_ {
 
-    notif_ch_notify_opcode_t notif_ch_notify_opcode;
     uint32_t client_id;
     notif_ch_notify_opcode_t notif_code;
     notif_chain_comm_channel_t notif_chain_comm_channel;
@@ -210,7 +210,7 @@ typedef struct notif_chain_subscriber_msg_format_ {
 
 struct notif_chain_{
 
-    char name[32];
+    char name[NOTIF_NAME_SIZE];
     /* Comparison fn to compare app_key_data 
      * present in notif_chain_elem_t objects
      * present in chain. This can be NULL if
@@ -290,19 +290,28 @@ notif_chain_process_remote_subscriber_request(
 #define ITERTAE_NOTIF_CHAIN_END(notif_chain_ptr, notif_chain_elem_ptr)  }}
 
 /* Subscription APIs to be used by Subscribers*/
+int
+notif_chain_send_msg_to_publisher(char *publisher_addr,
+                                  uint16_t publisher_port_no,
+                                  char *msg, uint32_t msg_size);
+
 bool
 notif_chain_subscribe_by_callback(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
-        notif_chain_app_cb cb,
-        uint32_t client_id);
+        uint32_t client_id,
+        notif_chain_app_cb cb);
 
 bool
 notif_chain_subscribe_by_inet_skt(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
+        uint32_t client_id,
+        char *subs_addr,
+        uint16_t subs_port_no,
+        uint16_t protocol_no,
         char *publisher_addr,
         uint16_t publisher_port_no);
 
@@ -311,13 +320,29 @@ notif_chain_subscribe_by_unix_skt(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
-        char *publisher_unix_skt_name);
+        uint32_t client_id,
+        char *subs_unix_skt_name,
+        char *publisher_addr,
+        uint16_t publisher_port_no);
 
 bool
 notif_chain_subscribe_msgq(
         char *notif_chain_name,
         void *key,
         uint32_t key_size,
-        char *publisher_msgq_name);
+        uint32_t client_id,
+        char *subs_msgq_name,
+        char *publisher_addr,
+        uint16_t publisher_port_no);
 
+int
+notif_chain_send_msg_to_publisher(char *publisher_addr,
+                                  uint16_t publisher_port_no,
+                                  char *msg,
+                                  uint32_t msg_size);
+int
+notif_chain_send_msg_to_subscriber(char *subscriber_addr,
+                                   uint16_t subscriber_port_no,
+                                   char *msg,
+                                   uint32_t msg_size);
 #endif /* __NOTIF_H__ */

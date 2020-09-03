@@ -158,8 +158,12 @@ static char *
 rt_entry_keys_print_fn(void *keys, uint32_t key_size,
                       char *output_buff, uint32_t buff_size){
 
+    if(!keys || !key_size){
+        sprintf(output_buff, "Dest = Nil");
+        return output_buff;
+    }
     rt_entry_keys_t *rt_entry_keys = (rt_entry_keys_t *)keys;
-    sprintf(output_buff, "Dest = %s/%d\n", 
+    sprintf(output_buff, "Dest = %s/%d", 
         rt_entry_keys->dest, rt_entry_keys->mask);
     return output_buff;
 }
