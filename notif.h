@@ -34,6 +34,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <unistd.h>
 
 typedef struct notif_chain_elem_ notif_chain_elem_t;
 typedef struct notif_chain_ notif_chain_t;

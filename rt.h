@@ -87,7 +87,7 @@ rt_entry_remove(rt_table_t *rt_table,
 
     if(!rt_entry->prev){
         if(rt_entry->next){
-            rt_entry->next->prev = NULL;
+            rt_entry->next->prev = 0;
             rt_table->head = rt_entry->next;
             rt_entry->next = 0;
             return;
@@ -95,8 +95,8 @@ rt_entry_remove(rt_table_t *rt_table,
         return;
     }
     if(!rt_entry->next){
-        rt_entry->prev->next = NULL;
-        rt_entry->prev = NULL;
+        rt_entry->prev->next = 0;
+        rt_entry->prev = 0;
         return;
     }
 

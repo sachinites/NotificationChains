@@ -198,6 +198,8 @@ main(int argc, char **argv){
      * of publisher process*/
 
      create_subscriber_thread();
+     create_subscriber_thread();
+     create_subscriber_thread();
 
     /*Start the publisher pkt receiever thread*/
      network_start_pkt_receiver_thread();
