@@ -90,7 +90,7 @@ main_menu(rt_table_t *rt){
                     /*Invoke Notif Chain*/
                     notif_chain_elem_t notif_chain_elem;
                     memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
-                    notif_chain_elem.client_pid = getpid();
+                    notif_chain_elem.client_id = 0; /* Not required */
                     notif_chain_elem.notif_code = PUB_TO_SUBS_NOTIF_C_CREATE;
                     rt_entry_keys_t rt_entry_keys;
                     strncpy(rt_entry_keys.dest, dest, 16);
@@ -197,9 +197,9 @@ main(int argc, char **argv){
      * for local subscribers i.e. subscribers running as a thread
      * of publisher process*/
 
-     create_subscriber_thread();
-     create_subscriber_thread();
-     create_subscriber_thread();
+     create_subscriber_thread(1);
+     create_subscriber_thread(2);
+     create_subscriber_thread(3);
 
     /*Start the publisher pkt receiever thread*/
      network_start_pkt_receiver_thread();

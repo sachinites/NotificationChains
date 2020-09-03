@@ -37,7 +37,6 @@
 #include <stdbool.h>
 #include "notif.h"
 #include "rt.h"
-#include "rt_notif.h"
 
 void
 create_subscriber_thread();
@@ -53,22 +52,42 @@ test_cb(notif_chain_elem_t *notif_chain_elem){
 static void *
 subscriber_thread_fn(void *arg){
 
-    printf("\n%s() started\n", __FUNCTION__);
-    
+   
+    uint32_t client_id = (uint32_t)arg;
     /* Do registration with Notification Chain.
      * This code acts as a client/subscriber code*/
-    rt_threaded_client_subscribe_for_ip("notif_chain_rt_table", "122.1.1.1", 32, test_cb);
-    rt_threaded_client_subscribe_for_ip("notif_chain_rt_table", "122.1.1.2", 32, test_cb);
-    rt_threaded_client_subscribe_for_ip("notif_chain_rt_table", "122.1.1.3", 32, test_cb);
-    rt_threaded_client_subscribe_for_ip("notif_chain_rt_table", "122.1.1.4", 32, test_cb);
-    rt_threaded_client_subscribe_for_ip("notif_chain_rt_table", "122.1.1.5", 32, test_cb);
-    rt_threaded_client_subscribe_for_ip("notif_chain_rt_table", "122.1.1.6", 32, test_cb);
+    rt_entry_keys_t rt_entry_keys;
+    memset(&rt_entry_keys, 0, sizeof(rt_entry_keys_t));
+
+    strncpy(rt_entry_keys.dest, "122.1.1.1", 16);
+    rt_entry_keys.mask = 32;
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+
+    strncpy(rt_entry_keys.dest, "122.1.1.2", 16);
+    rt_entry_keys.mask = 32;
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+
+    strncpy(rt_entry_keys.dest, "122.1.1.3", 16);
+    rt_entry_keys.mask = 32;
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+
+    strncpy(rt_entry_keys.dest, "122.1.1.4", 16);
+    rt_entry_keys.mask = 32;
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+
+    strncpy(rt_entry_keys.dest, "122.1.1.5", 16);
+    rt_entry_keys.mask = 32;
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
+
+    strncpy(rt_entry_keys.dest, "122.1.1.6", 16);
+    rt_entry_keys.mask = 32;
+    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), test_cb, client_id);
 
     pause();
 }
 
 void
-create_subscriber_thread(){
+create_subscriber_thread(uint32_t client_id){
 
     pthread_attr_t attr;
     pthread_t subs_thread;
@@ -78,6 +97,6 @@ create_subscriber_thread(){
 
     pthread_create(&subs_thread, &attr,
             subscriber_thread_fn,
-            NULL);
+            (void *)client_id);
 }
 

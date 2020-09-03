@@ -173,7 +173,7 @@ struct notif_chain_elem_{
     notif_chain_elem_t *prev;
     notif_chain_elem_t *next;
     
-    pid_t client_pid;
+    uint32_t client_id;
     notif_ch_notify_opcode_t notif_code;
     
     struct {
@@ -201,7 +201,7 @@ struct notif_chain_elem_{
 typedef struct notif_chain_subscriber_msg_format_ {
 
     notif_ch_notify_opcode_t notif_ch_notify_opcode;
-    pid_t client_pid;
+    uint32_t client_id;
     notif_ch_notify_opcode_t notif_code;
     notif_chain_comm_channel_t notif_chain_comm_channel;
     uint32_t subs_data_size;
@@ -288,5 +288,36 @@ notif_chain_process_remote_subscriber_request(
         _next_notif_chain_elem = notif_chain_elem_ptr->next;
 
 #define ITERTAE_NOTIF_CHAIN_END(notif_chain_ptr, notif_chain_elem_ptr)  }}
+
+/* Subscription APIs to be used by Subscribers*/
+bool
+notif_chain_subscribe_by_callback(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        notif_chain_app_cb cb,
+        uint32_t client_id);
+
+bool
+notif_chain_subscribe_by_inet_skt(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        char *publisher_addr,
+        uint16_t publisher_port_no);
+
+bool
+notif_chain_subscribe_by_unix_skt(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        char *publisher_unix_skt_name);
+
+bool
+notif_chain_subscribe_msgq(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        char *publisher_msgq_name);
 
 #endif /* __NOTIF_H__ */

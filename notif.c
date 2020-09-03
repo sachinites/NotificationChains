@@ -215,8 +215,8 @@ notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
 
     ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain, notif_chain_elem_curr){
 
-        if(notif_chain_elem_curr->client_pid != 
-                notif_chain_elem->client_pid){
+        if(notif_chain_elem_curr->client_id != 
+                notif_chain_elem->client_id){
 
             continue;
         }
@@ -333,10 +333,11 @@ notif_chain_dump(notif_chain_t *notif_chain){
 
     ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain, notif_chain_elem_curr){
 
-        printf("\tprev %p next %p app_key_data_ptr %p "
+        printf("\tprev %p next %p client_id %u app_key_data_ptr %p "
                 "app_key_data_size %u app_cb %p\n",
             notif_chain_elem_curr->prev,
             notif_chain_elem_curr->next,
+            notif_chain_elem_curr->client_id,
             notif_chain_elem_curr->data.app_key_data,
             notif_chain_elem_curr->data.app_key_data_size,
             NOTIF_CHAIN_ELEM_APP_CB(
@@ -471,8 +472,8 @@ notif_chain_build_notif_chain_elem_from_subs_msg(
     notif_chain_elem_template->notif_code = 
         notif_chain_subscriber_msg_format->notif_ch_notify_opcode;
 
-    notif_chain_elem_template->client_pid = 
-        notif_chain_subscriber_msg_format->client_pid;
+    notif_chain_elem_template->client_id = 
+        notif_chain_subscriber_msg_format->client_id;
 
     memcpy(&notif_chain_elem_template->notif_chain_comm_channel,
            &notif_chain_subscriber_msg_format->notif_chain_comm_channel,
@@ -540,4 +541,56 @@ notif_chain_process_remote_subscriber_request(
     }
 }
 
-    
+/* APIs to be used by client/subscribers*/
+bool
+notif_chain_subscribe_by_callback(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        notif_chain_app_cb cb,
+        uint32_t client_id){
+
+    notif_chain_elem_t notif_chain_elem;
+    memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
+    notif_chain_elem.client_id = client_id;
+    notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
+    notif_chain_elem.data.app_key_data = key;
+    notif_chain_elem.data.app_key_data_size = key_size;
+    notif_chain_comm_channel_t *
+        notif_chain_comm_channel = &notif_chain_elem.notif_chain_comm_channel;
+    notif_chain_comm_channel->notif_ch_type = NOTIF_C_CALLBACKS;
+    NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel) = cb;
+    return notif_chain_subscribe(notif_chain_name, &notif_chain_elem);
+}
+
+bool
+notif_chain_subscribe_by_inet_skt(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        char *publisher_addr,
+        uint16_t publisher_port_no){
+
+    return true;
+}
+
+bool
+notif_chain_subscribe_by_unix_skt(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        char *publisher_unix_skt_name){
+
+    return true;
+}
+
+bool
+notif_chain_subscribe_msgq(
+        char *notif_chain_name,
+        void *key,
+        uint32_t key_size,
+        char *publisher_msgq_name){
+
+    return true;
+}
+
