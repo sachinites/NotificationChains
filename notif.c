@@ -39,6 +39,7 @@
 #include <unistd.h> // for close
 #include <netdb.h>  /*for struct hostent*/
 #include "notif.h"
+#include "utils.h"
 
 static notif_chain_lookup_by_name_cb 
     notif_chain_lookup_by_name_cb_fn;
@@ -603,8 +604,9 @@ notif_chain_subscribe_by_inet_skt(
 
     notif_chain_comm_channel->notif_ch_type = NOTIF_C_INET_SOCKETS;
     
-    strncpy(NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel),
-            subs_addr, 16);
+    NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel) = 
+            tcp_ip_covert_ip_p_to_n(subs_addr);
+    
     NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel) = subs_port_no;
     NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel) = protocol_no;
 
@@ -692,4 +694,272 @@ notif_chain_send_msg_to_subscriber(char *subscriber_addr,
                                     msg,
                                     msg_size);
 }
+
+uint32_t
+notif_chain_compute_required_tlv_buffer_size_for_notif_chain_elem_encoding(
+    notif_chain_elem_t *notif_chain_elem){
+
+    uint32_t size = 0;
+
+    /* Mandatory TLVs*/
+    /* Notif chain name*/
+    size += TLV_OVERHEAD_SIZE + NOTIF_C_NOTIF_CHAIN_NAME_VALUE_LEN;
+
+    /* client id*/
+    size += TLV_OVERHEAD_SIZE + NOTIF_C_CLIENT_ID_VALUE_LEN;
+
+    /*notif code*/
+    size += TLV_OVERHEAD_SIZE + NOTIF_C_NOTIF_CODE_VALUE_LEN;
+
+    /* Non-Mandatory TLV*/
+    switch(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)){
+
+        case NOTIF_C_CALLBACKS:
+        break;
+        case NOTIF_C_MSG_Q:
+        case NOTIF_C_AF_UNIX:
+            /*Comm Channel Type*/
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN;
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_NAME_VALUE_LEN;
+        break;
+        case NOTIF_C_INET_SOCKETS:
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN;
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_IP_ADDR_VALUE_LEN;
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_PORT_NO_VALUE_LEN;
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_PROTOCOL_NO_VALUE_LEN;
+        break;
+        case NOTIF_C_ANY:
+            /* Encode NOTIF_C_ANY as it is. Useful for publisher to choose 
+             * send notif to subscriber without considering the channel type
+             * as filter criteria*/
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN;
+            break;
+        case NOTIF_C_NOT_KNOWN:
+        break;
+        default:
+            ;
+    }
+
+    
+    if(notif_chain_elem->data.app_key_data && 
+            notif_chain_elem->data.app_key_data_size){
+
+        size += TLV_OVERHEAD_SIZE + notif_chain_elem->data.app_key_data_size;
+    }
+
+    if(notif_chain_elem->data.app_data_to_notify &&
+        notif_chain_elem->data.app_data_to_notify_size){
+
+        size += TLV_OVERHEAD_SIZE + notif_chain_elem->data.app_data_to_notify_size;
+    }
+
+    return size;
+}
+
+uint32_t
+notif_chain_serialize_notif_chain_elem(char *notif_chain_name,
+        notif_chain_elem_t *notif_chain_elem,
+        char *output_buffer_provided,
+        uint32_t output_buffer_provided_size,
+        char **output_buffer_computed){
+
+    char *output_buff;
+    uint32_t tlv_buff_cal_size = 0 ;
+    notif_chain_comm_channel_t *
+        notif_chain_comm_channel = NULL;
+
+    /* fF neither output buffer provided, nor are
+     * we being asked to allocate new one, then
+     * what is the purpose of my life*/
+    if(!output_buffer_provided && 
+        !output_buffer_computed){
+        assert(0);
+    }
+
+    /* If i am asked to compute the output buffer,
+     * then i must not be supplied with buffer pointer.
+     * I will allocate one */
+    if(output_buffer_computed && 
+        *output_buffer_computed != NULL){    
+        assert(0);
+    }
+
+    tlv_buff_cal_size = 
+        notif_chain_compute_required_tlv_buffer_size_for_notif_chain_elem_encoding(
+            notif_chain_elem);
+
+    if(output_buffer_provided && 
+        (tlv_buff_cal_size > output_buffer_provided_size)){
+
+        printf("%s() : Error : Not big enough output buffer provided\n",
+            __FUNCTION__);
+
+        return 0;
+    }
+
+    output_buff = NULL;
+
+    if(output_buffer_provided){
+        
+        output_buff = output_buffer_provided;
+    }
+    else if(output_buffer_computed){
+
+        output_buff = (char *)calloc(1, tlv_buff_cal_size);
+        *output_buffer_computed = output_buff;
+    }
+
+    if(!output_buff){
+        return 0;
+    }
+
+    /* Mandatory TLVs First*/
+    output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_NOTIF_CHAIN_NAME_TLV,
+                                        NOTIF_C_NOTIF_CHAIN_NAME_VALUE_LEN,
+                                        notif_chain_name);
+
+    output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_CLIENT_ID_TLV,
+                                        NOTIF_C_CLIENT_ID_VALUE_LEN,
+                                        (char *)&(notif_chain_elem->client_id));
+
+    output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_NOTIF_CODE_TLV,
+                                        NOTIF_C_NOTIF_CODE_VALUE_LEN,
+                                        (char *)&(notif_chain_elem->notif_code));
+
+    notif_chain_comm_channel = &notif_chain_elem->notif_chain_comm_channel;
+
+    /*Non-Mandatory TLVs now*/
+    switch(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)){
+        case NOTIF_C_CALLBACKS:
+        break;
+        case NOTIF_C_MSG_Q:
+        case NOTIF_C_AF_UNIX:
+            output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_COMM_CHANNEL_TYPE_TLV,
+                                        NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN,
+                                        (char *)&(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)));
+            output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_COMM_CHANNEL_NAME_TLV,
+                                        NOTIF_C_COMM_CHANNEL_NAME_VALUE_LEN,
+                NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem) == NOTIF_C_MSG_Q ?
+                    NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel) :
+                    NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel));
+        break;
+        case NOTIF_C_INET_SOCKETS:
+            output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_COMM_CHANNEL_TYPE_TLV,
+                                        NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN,
+                                        (char *)&(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)));
+            output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_IP_ADDR_TLV,
+                                        NOTIF_C_IP_ADDR_VALUE_LEN,
+                                        tcp_ip_covert_ip_n_to_p(
+                                        NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel), 0));
+
+            output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_PORT_NO_TLV,
+                                        NOTIF_C_PORT_NO_VALUE_LEN,
+                                        (char *)&(NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel)));
+            output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_PROTOCOL_NO_TLV,
+                                        NOTIF_C_PROTOCOL_NO_VALUE_LEN,
+                                        (char *)&(NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel)));
+        break;
+        case NOTIF_C_ANY:
+            output_buff = tlv_buffer_insert_tlv(output_buff,
+                                        NOTIF_C_COMM_CHANNEL_TYPE_TLV,
+                                        NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN,
+                                        (char *)&(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem))); 
+        case NOTIF_C_NOT_KNOWN:
+        break;
+        default:
+            ;
+    }
+                                        
+      
+    if(notif_chain_elem->data.app_data_to_notify &&
+        notif_chain_elem->data.app_data_to_notify_size){
+
+        output_buff = tlv_buffer_insert_tlv(output_buff,
+                            NOTIF_C_APP_KEY_DATA_TLV,
+                            notif_chain_elem->data.app_key_data_size,
+                            (char *)notif_chain_elem->data.app_key_data);
+    }
+
+    if(notif_chain_elem->data.app_data_to_notify &&
+        notif_chain_elem->data.app_data_to_notify_size){
+
+        output_buff = tlv_buffer_insert_tlv(output_buff,
+                            NOTIF_C_APP_DATA_TO_NOTIFY_TLV,
+                            notif_chain_elem->data.app_data_to_notify_size,
+                            (char *)notif_chain_elem->data.app_data_to_notify);
+    }
+
+    return tlv_buff_cal_size;
+}
+
+notif_chain_elem_t *
+notif_chain_deserialize_notif_chain_elem(char *buffer, uint32_t buff_size){
+
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

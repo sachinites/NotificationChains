@@ -166,8 +166,6 @@ typedef struct notif_chain_comm_channel_{
     (notif_chain_comm_channel_ptr->u.inet_skt_info.port_no)
 #define NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel_ptr)            \
     (notif_chain_comm_channel_ptr->u.inet_skt_info.protocol_no)
-#define NOTIF_CHAIN_ELEM_INET_SOCKFD(notif_chain_comm_channel_ptr)      \
-    (notif_chain_comm_channel_ptr->u.inet_skt_info.sock_fd)
 
 struct notif_chain_elem_{
 
@@ -345,4 +343,41 @@ notif_chain_send_msg_to_subscriber(char *subscriber_addr,
                                    uint16_t subscriber_port_no,
                                    char *msg,
                                    uint32_t msg_size);
+
+/* TLV Management */
+#define NOTIF_C_NOTIF_CHAIN_NAME_TLV    (1)       /* Value len : NOTIF_NAME_SIZE */
+#define NOTIF_C_CLIENT_ID_TLV           (1 << 1)  /* Value len : 4 */
+#define NOTIF_C_COMM_CHANNEL_TYPE_TLV   (1 << 2)  /* Value len : 1 */
+#define NOTIF_C_COMM_CHANNEL_NAME_TLV   (1 << 3)  /* Value len : NOTIF_NAME_SIZE */
+#define NOTIF_C_IP_ADDR_TLV             (1 << 4)  /* Value len : 4 , integer format */
+#define NOTIF_C_PORT_NO_TLV             (1 << 5)  /* Value len : 2 , integer format */
+#define NOTIF_C_NOTIF_CODE_TLV          (1 << 6)  /* Value len : 1 */
+#define NOTIF_C_PROTOCOL_NO_TLV         (1 << 7)  /* Value len : 1 */
+#define NOTIF_C_APP_KEY_DATA_TLV        (1 << 8)  /* Variable Size */
+#define NOTIF_C_APP_DATA_TO_NOTIFY_TLV  (1 << 9)  /* Variable Size */
+
+#define NOTIF_C_NOTIF_CHAIN_NAME_VALUE_LEN  (NOTIF_NAME_SIZE)
+#define NOTIF_C_CLIENT_ID_VALUE_LEN         (sizeof(uint32_t))
+#define NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN (sizeof(uint8_t))
+#define NOTIF_C_COMM_CHANNEL_NAME_VALUE_LEN (NOTIF_NAME_SIZE)
+#define NOTIF_C_IP_ADDR_VALUE_LEN           (sizeof(uint32_t))
+#define NOTIF_C_PORT_NO_VALUE_LEN           (sizeof(uint16_t))
+#define NOTIF_C_NOTIF_CODE_VALUE_LEN        (sizeof(uint8_t))
+#define NOTIF_C_PROTOCOL_NO_VALUE_LEN       (sizeof(uint8_t))
+
+
+uint32_t
+notif_chain_compute_required_tlv_buffer_size_for_notif_chain_elem_encoding(
+    notif_chain_elem_t *notif_chain_elem);
+
+uint32_t
+notif_chain_serialize_notif_chain_elem(char *notif_chain_name,
+                                    notif_chain_elem_t *notif_chain_elem,
+                                    char *output_buffer_provided,
+                                    uint32_t output_buffer_provided_size,
+                                    char **output_buffer_computed);
+
+notif_chain_elem_t *
+notif_chain_deserialize_notif_chain_elem(char *buffer, uint32_t buff_size);
+
 #endif /* __NOTIF_H__ */
