@@ -38,13 +38,12 @@
 
 #include <stdint.h>
 
-#define IS_BIT_SET(n, pos)      ((n & (1 << (pos))) != 0)
-#define TOGGLE_BIT(n, pos)      (n = n ^ (1 << (pos)))
-#define COMPLEMENT(num)         (num = num ^ 0xFFFFFFFF)
-#define UNSET_BIT(n, pos)       (n = n & ((1 << pos) ^ 0xFFFFFFFF))
-#define SET_BIT(n, pos)         (n = n | 1 << pos)
-
 #define TLV_OVERHEAD_SIZE  2 /* 1 Bytes for TYPE, 1 Byte for value len*/
+
+#define FIELD_SIZE(struct_name, field_name) \
+    (sizeof(((struct_name *)0)->field_name))
+
+#define MAX(a, b) (a > b ? a : b)
 
 /*Macro to Type Length Value reply
  * uint8_t * - start_ptr, IN
