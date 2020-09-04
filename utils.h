@@ -44,25 +44,25 @@
 #define UNSET_BIT(n, pos)       (n = n & ((1 << pos) ^ 0xFFFFFFFF))
 #define SET_BIT(n, pos)         (n = n | 1 << pos)
 
-#define TLV_OVERHEAD_SIZE  2 /* 2 Bytes for TYPE, 1 Byte for value len*/
+#define TLV_OVERHEAD_SIZE  2 /* 1 Bytes for TYPE, 1 Byte for value len*/
 
 /*Macro to Type Length Value reply
- * unsigned char * - start_ptr, IN
- * uint16_t - type, OUT
- * unsigned char - length, OUT
- * unsigned char * - tlv_ptr, OUT
+ * uint8_t * - start_ptr, IN
+ * uint8_t - type, OUT
+ * uint8_t - length, OUT
+ * uint8_t * - tlv_ptr, OUT
  * unsigned int - total_size(excluding first 8 bytes), IN
  * */
 #define ITERATE_TLV_BEGIN(start_ptr, type, length, tlv_ptr, tlv_size)           \
 {                                                                               \
-    unsigned int _len = 0; unsigned char _tlv_value_size = 0;                   \
+    unsigned int _len = 0; uint8_t _tlv_value_size = 0;                         \
     type = 0; length = 0; tlv_ptr = NULL;                                       \
-    for(tlv_ptr = (unsigned char *)start_ptr +                                  \
+    for(tlv_ptr = (uint8_t *)start_ptr +                                        \
              TLV_OVERHEAD_SIZE; _len < tlv_size;                                \
             _len += _tlv_value_size + TLV_OVERHEAD_SIZE,                        \
              tlv_ptr = (tlv_ptr + TLV_OVERHEAD_SIZE + length)){                 \
-        type = *(uint16_t *)(tlv_ptr - TLV_OVERHEAD_SIZE);                      \
-        _tlv_value_size = (unsigned char)(*(tlv_ptr - sizeof(unsigned char)));  \
+        type = *(uint8_t *)(tlv_ptr - TLV_OVERHEAD_SIZE);                       \
+        _tlv_value_size = (uint8_t)(*(tlv_ptr - sizeof(uint8_t)));              \
         length = _tlv_value_size;
 
 #define ITERATE_TLV_END(start_ptr, type, length, tlv_ptr, tlv_size)             \
@@ -71,11 +71,11 @@
 char *
 tlv_buffer_get_particular_tlv(char *tlv_buff, /*Input TLV Buffer*/
                               uint32_t tlv_buff_size, /*Input TLV Buffer Total Size*/
-                              uint16_t tlv_no, /*Input TLV Number*/
+                              uint8_t tlv_no, /*Input TLV Number*/
                               uint8_t *tlv_data_len); /*Output TLV Data len*/
 
 char *
-tlv_buffer_insert_tlv(char *tlv_buff, uint16_t tlv_no, 
+tlv_buffer_insert_tlv(char *tlv_buff, uint8_t tlv_no, 
                      uint8_t data_len, char *data);
 
 char *

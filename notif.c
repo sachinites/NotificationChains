@@ -757,7 +757,8 @@ notif_chain_compute_required_tlv_buffer_size_for_notif_chain_elem_encoding(
 }
 
 uint32_t
-notif_chain_serialize_notif_chain_elem(char *notif_chain_name,
+notif_chain_serialize_notif_chain_elem(
+        char *notif_chain_name,
         notif_chain_elem_t *notif_chain_elem,
         char *output_buffer_provided,
         uint32_t output_buffer_provided_size,
@@ -768,7 +769,7 @@ notif_chain_serialize_notif_chain_elem(char *notif_chain_name,
     notif_chain_comm_channel_t *
         notif_chain_comm_channel = NULL;
 
-    /* fF neither output buffer provided, nor are
+    /* If neither output buffer provided, nor are
      * we being asked to allocate new one, then
      * what is the purpose of my life*/
     if(!output_buffer_provided && 
@@ -863,6 +864,7 @@ notif_chain_serialize_notif_chain_elem(char *notif_chain_name,
                                         NOTIF_C_PORT_NO_TLV,
                                         NOTIF_C_PORT_NO_VALUE_LEN,
                                         (char *)&(NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel)));
+
             output_buff = tlv_buffer_insert_tlv(output_buff,
                                         NOTIF_C_PROTOCOL_NO_TLV,
                                         NOTIF_C_PROTOCOL_NO_VALUE_LEN,
@@ -902,43 +904,100 @@ notif_chain_serialize_notif_chain_elem(char *notif_chain_name,
 }
 
 notif_chain_elem_t *
-notif_chain_deserialize_notif_chain_elem(char *buffer, uint32_t buff_size){
+notif_chain_deserialize_notif_chain_elem(
+                            char *tlv_buffer,
+                            uint32_t tlv_buff_size,
+                            char *notif_chain_name /*o/p*/){
 
-    
-}
+    notif_chain_elem_t *notif_chain_elem;
+    uint8_t tlv_type, tlv_len, *tlv_value;
+    notif_chain_comm_channel_t *
+        notif_chain_comm_channel = NULL;
 
+    assert(notif_chain_name);
 
+    notif_chain_elem = calloc(1, sizeof(notif_chain_elem_t));
+    notif_chain_comm_channel = &notif_chain_elem->notif_chain_comm_channel;
 
+    ITERATE_TLV_BEGIN(tlv_buffer, tlv_type,
+                      tlv_len, tlv_value, 
+                      tlv_buff_size){
 
+        switch(tlv_type){
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            case NOTIF_C_NOTIF_CHAIN_NAME_TLV:
+                strncpy(notif_chain_name, tlv_value, tlv_len);
+                break;
+            case NOTIF_C_CLIENT_ID_TLV:
+                memcpy((char *)&notif_chain_elem->client_id,
+                       tlv_value, tlv_len);
+                break;
+            case NOTIF_C_COMM_CHANNEL_TYPE_TLV:
+                memcpy((char *)&(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)),
+                        tlv_value, tlv_len);
+                break;
+            case NOTIF_C_COMM_CHANNEL_NAME_TLV:
+                switch(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)){
+                    case NOTIF_C_ANY:
+                        break;
+                    case NOTIF_C_CALLBACKS:
+                        break;
+                    case NOTIF_C_MSG_Q:
+                        memcpy(NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel),
+                                tlv_value, tlv_len);
+                        break;
+                    case NOTIF_C_AF_UNIX:
+                        memcpy(NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel),
+                                tlv_value, tlv_len);
+                        break;
+                    case NOTIF_C_INET_SOCKETS:
+                        break;
+                    case NOTIF_C_NOT_KNOWN:
+                        break;
+                    default:
+                        ;
+                }
+                break;
+            case NOTIF_C_IP_ADDR_TLV:
+                memcpy((char *)&(NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel)),
+                        tlv_value, tlv_len);
+                break;
+            case NOTIF_C_PORT_NO_TLV:
+                memcpy((char *)&(NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel)),
+                        tlv_value, tlv_len);
+                break;
+            case NOTIF_C_NOTIF_CODE_TLV:
+                 memcpy((char *)&notif_chain_elem->notif_code,
+                        tlv_value, tlv_len);
+                 break;
+            case NOTIF_C_PROTOCOL_NO_TLV:
+                memcpy((char *)&(NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel)),
+                        tlv_value, tlv_len);
+                break;
+            case NOTIF_C_APP_KEY_DATA_TLV:
+                notif_chain_elem->data.app_key_data = (char *)calloc(1,
+                    tlv_len);
+                memcpy((char *)notif_chain_elem->data.app_key_data,
+                        tlv_value, tlv_len);
+                notif_chain_elem->data.app_key_data_size = (uint32_t)tlv_len;
+                break;
+            case NOTIF_C_APP_DATA_TO_NOTIFY_TLV:
+                notif_chain_elem->data.app_data_to_notify = (char *)calloc(1,
+                        tlv_len);
+                memcpy((char *)notif_chain_elem->data.app_data_to_notify,
+                        tlv_value, tlv_len);
+                notif_chain_elem->data.app_data_to_notify_size = (uint32_t)tlv_len;
+                notif_chain_elem->data.is_alloc_app_data_to_notify = true;
+                break;
+            default:
+                ;
+        }
+    }ITERATE_TLV_END(tlv_buffer, tlv_type,
+                     tlv_len, tlv_value,
+                     tlv_buff_size);
+      
+    return notif_chain_elem;
+}   
 
 
 
