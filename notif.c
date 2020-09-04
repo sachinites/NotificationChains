@@ -717,10 +717,12 @@ notif_chain_compute_required_tlv_buffer_size_for_notif_chain_elem_encoding(
         case NOTIF_C_CALLBACKS:
         break;
         case NOTIF_C_MSG_Q:
-        case NOTIF_C_AF_UNIX:
-            /*Comm Channel Type*/
             size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN;
-            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_NAME_VALUE_LEN;
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_MSGQ_NAME_VALUE_LEN;
+        break;
+        case NOTIF_C_AF_UNIX:
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN;
+            size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_UNIX_SKT_NAME_VALUE_LEN;
         break;
         case NOTIF_C_INET_SOCKETS:
             size += TLV_OVERHEAD_SIZE + NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN;
@@ -844,7 +846,11 @@ notif_chain_serialize_notif_chain_elem(
                                         (char *)&(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)));
             output_buff = tlv_buffer_insert_tlv(output_buff,
                                         NOTIF_C_COMM_CHANNEL_NAME_TLV,
-                                        NOTIF_C_COMM_CHANNEL_NAME_VALUE_LEN,
+
+                NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem) == NOTIF_C_MSG_Q ?
+                    NOTIF_C_COMM_CHANNEL_MSGQ_NAME_VALUE_LEN :
+                    NOTIF_C_COMM_CHANNEL_UNIX_SKT_NAME_VALUE_LEN,
+
                 NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem) == NOTIF_C_MSG_Q ?
                     NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel) :
                     NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel));
@@ -854,6 +860,7 @@ notif_chain_serialize_notif_chain_elem(
                                         NOTIF_C_COMM_CHANNEL_TYPE_TLV,
                                         NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN,
                                         (char *)&(NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem)));
+
             output_buff = tlv_buffer_insert_tlv(output_buff,
                                         NOTIF_C_IP_ADDR_TLV,
                                         NOTIF_C_IP_ADDR_VALUE_LEN,

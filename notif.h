@@ -360,14 +360,14 @@ notif_chain_send_msg_to_subscriber(char *subscriber_addr,
 #define NOTIF_C_NOTIF_CHAIN_NAME_VALUE_LEN  (FIELD_SIZE(notif_chain_t, name))
 #define NOTIF_C_CLIENT_ID_VALUE_LEN         (FIELD_SIZE(notif_chain_elem_t, client_id))
 #define NOTIF_C_COMM_CHANNEL_TYPE_VALUE_LEN (FIELD_SIZE(notif_chain_comm_channel_t, notif_ch_type)) 
-#define NOTIF_C_COMM_CHANNEL_NAME_VALUE_LEN                        \
-    (MAX((FIELD_SIZE(notif_chain_comm_channel_t, u.mq.msgQ_name)), \
-        (FIELD_SIZE(notif_chain_comm_channel_t, u.unix_skt.unix_skt_name))))
+#define NOTIF_C_COMM_CHANNEL_MSGQ_NAME_VALUE_LEN     \
+    (FIELD_SIZE(notif_chain_comm_channel_t, u.mq.msgQ_name))
+#define NOTIF_C_COMM_CHANNEL_UNIX_SKT_NAME_VALUE_LEN \
+    (FIELD_SIZE(notif_chain_comm_channel_t, u.unix_skt.unix_skt_name))
 #define NOTIF_C_IP_ADDR_VALUE_LEN           (FIELD_SIZE(notif_chain_comm_channel_t, u.inet_skt_info.ip_addr))
 #define NOTIF_C_PORT_NO_VALUE_LEN           (FIELD_SIZE(notif_chain_comm_channel_t, u.inet_skt_info.port_no))
 #define NOTIF_C_NOTIF_CODE_VALUE_LEN        (FIELD_SIZE(notif_chain_elem_t, notif_code)) 
 #define NOTIF_C_PROTOCOL_NO_VALUE_LEN       (FIELD_SIZE(notif_chain_comm_channel_t, u.inet_skt_info.protocol_no))
-
 
 uint32_t
 notif_chain_compute_required_tlv_buffer_size_for_notif_chain_elem_encoding(
