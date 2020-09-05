@@ -216,6 +216,8 @@ main(int argc, char **argv){
 
 #define MAX_PACKET_BUFFER_SIZE 1024
 
+static char recv_buffer[MAX_PACKET_BUFFER_SIZE];
+
 static void *
 _network_start_pkt_receiver_thread(void *arg){
 
@@ -244,7 +246,6 @@ _network_start_pkt_receiver_thread(void *arg){
     struct sockaddr_in subscriber_addr;
     FD_SET(udp_sock_fd, &backup_sock_fd_set);
     int bytes_recvd, addr_len;
-    char recv_buffer[MAX_PACKET_BUFFER_SIZE];
 
     while(1){
 
@@ -259,7 +260,7 @@ _network_start_pkt_receiver_thread(void *arg){
                     MAX_PACKET_BUFFER_SIZE, 0, (struct sockaddr *)&subscriber_addr, &addr_len);
 
             notif_chain_process_remote_subscriber_request(
-                    recv_buffer, recv_buffer + 32, bytes_recvd - 32);
+                    recv_buffer, bytes_recvd);
         }
     }
     return 0;

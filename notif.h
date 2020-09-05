@@ -197,15 +197,6 @@ struct notif_chain_elem_{
 #define NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem_ptr)                     \
     (notif_chain_elem_ptr->notif_chain_comm_channel.notif_ch_type)
 
-typedef struct notif_chain_subscriber_msg_format_ {
-
-    uint32_t client_id;
-    notif_ch_notify_opcode_t notif_code;
-    notif_chain_comm_channel_t notif_chain_comm_channel;
-    uint32_t subs_data_size;
-    char subs_data[0];
-} notif_chain_subscriber_msg_format_t;
-
 struct notif_chain_{
 
     char name[NOTIF_NAME_SIZE];
@@ -225,6 +216,10 @@ struct notif_chain_{
 void
 notif_chain_free_notif_chain_elem(
                 notif_chain_elem_t *notif_chain_elem);
+void
+notif_chain_free_notif_chain_elem_internals(
+                notif_chain_elem_t *notif_chain_elem);
+
 void
 notif_chain_init(notif_chain_t *notif_chain,
                  char *chain_name,
@@ -273,9 +268,8 @@ notif_chain_unsubscribe(char *notif_name,
 
 bool
 notif_chain_process_remote_subscriber_request(
-                     char *notif_chain_name,
-                     char *subs_msg,
-                     uint32_t subs_msg_size);
+                     char *subs_tlv_buffer,
+                     uint32_t subs_tlv_buffer_size);
 
 #define ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain_ptr, notif_chain_elem_ptr)  \
 {                                                                         \

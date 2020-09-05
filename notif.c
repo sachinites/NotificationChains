@@ -91,7 +91,7 @@ notif_chain_release_communication_channel_resources(
 }
 
 void
-notif_chain_free_notif_chain_elem(
+notif_chain_free_notif_chain_elem_internals(
             notif_chain_elem_t *notif_chain_elem){
 
         assert(notif_chain_elem->prev == 0 && 
@@ -110,6 +110,15 @@ notif_chain_free_notif_chain_elem(
         notif_chain_elem->data.app_data_to_notify_size = 0;
         notif_chain_release_communication_channel_resources(
                 &notif_chain_elem->notif_chain_comm_channel);
+}
+
+void
+notif_chain_free_notif_chain_elem(
+            notif_chain_elem_t *notif_chain_elem){
+
+        notif_chain_free_notif_chain_elem_internals(
+                notif_chain_elem);
+
         free(notif_chain_elem); 
 }
 
@@ -179,13 +188,13 @@ notif_chain_communication_channel_match(
         case NOTIF_C_MSG_Q:
             if(strncmp(NOTIF_CHAIN_ELEM_MSGQ_NAME(channel1),
                        NOTIF_CHAIN_ELEM_MSGQ_NAME(channel2),
-                       32))
+                       NOTIF_C_COMM_CHANNEL_MSGQ_NAME_VALUE_LEN))
                 return false;
             return true;
         case NOTIF_C_AF_UNIX:
             if(strncmp(NOTIF_CHAIN_ELEM_SKT_NAME(channel1),
                        NOTIF_CHAIN_ELEM_SKT_NAME(channel2),
-                       32))
+                       NOTIF_C_COMM_CHANNEL_UNIX_SKT_NAME_VALUE_LEN))
                 return false;
             return true;
         case NOTIF_C_INET_SOCKETS:
@@ -193,7 +202,10 @@ notif_chain_communication_channel_match(
                 NOTIF_CHAIN_ELEM_IP_ADDR(channel2)) 
                 &&
                 (NOTIF_CHAIN_ELEM_PORT_NO(channel1) ==
-                NOTIF_CHAIN_ELEM_PORT_NO(channel2)))
+                NOTIF_CHAIN_ELEM_PORT_NO(channel2))
+                &&
+                (NOTIF_CHAIN_ELEM_PROTO(channel1) == 
+                NOTIF_CHAIN_ELEM_PROTO(channel2)))
                 return true;
             return false;
         case NOTIF_C_NOT_KNOWN:
@@ -464,60 +476,26 @@ notif_chain_elem_remove(notif_chain_t *notif_chain,
     notif_chain_elem->next = 0;
 }
 
-static bool
-notif_chain_build_notif_chain_elem_from_subs_msg(
-        char *subs_msg, 
-        uint32_t subs_msg_size,
-        notif_chain_elem_t *notif_chain_elem_template){ // empty template
-
-    memset(notif_chain_elem_template, 0, sizeof(notif_chain_elem_t));
-    
-    notif_chain_subscriber_msg_format_t *
-        notif_chain_subscriber_msg_format = 
-        (notif_chain_subscriber_msg_format_t *)subs_msg;
-
-    notif_chain_elem_template->notif_code = 
-        notif_chain_subscriber_msg_format->notif_code;
-
-    notif_chain_elem_template->client_id = 
-        notif_chain_subscriber_msg_format->client_id;
-
-    memcpy(&notif_chain_elem_template->notif_chain_comm_channel,
-           &notif_chain_subscriber_msg_format->notif_chain_comm_channel,
-           sizeof(notif_chain_comm_channel_t));
-
-    if(notif_chain_subscriber_msg_format->subs_data &&
-        notif_chain_subscriber_msg_format->subs_data_size){
-        notif_chain_elem_template->data.app_key_data = 
-            calloc(1, notif_chain_subscriber_msg_format->subs_data_size);
-        memcpy(notif_chain_elem_template->data.app_key_data,
-            notif_chain_subscriber_msg_format->subs_data,
-            notif_chain_subscriber_msg_format->subs_data_size);
-    }
-    return true;
-}
-
-
 bool
 notif_chain_process_remote_subscriber_request(
-        char *notif_chain_name,
-        char *subs_msg, 
-        uint32_t subs_msg_size){
+        char *subs_tlv_buffer, 
+        uint32_t subs_tlv_buffer_size){
 
-    bool res;
     notif_ch_type_t notif_ch_type;
     notif_ch_notify_opcode_t notif_code;
-    notif_chain_elem_t notif_chain_elem;
+    notif_chain_elem_t *notif_chain_elem;
+    char notif_chain_name[NOTIF_C_NOTIF_CHAIN_NAME_VALUE_LEN];
 
-    res = false;
-    notif_chain_build_notif_chain_elem_from_subs_msg
-                (subs_msg, subs_msg_size, &notif_chain_elem);
+    notif_chain_elem = notif_chain_deserialize_notif_chain_elem(
+                        subs_tlv_buffer,
+                        subs_tlv_buffer_size,
+                        notif_chain_name);
 
-    notif_ch_type = NOTIF_CHAIN_ELEM_TYPE((&notif_chain_elem));
+    notif_ch_type = NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem);
 
     assert(notif_ch_type != NOTIF_C_CALLBACKS);
 
-    notif_code = notif_chain_elem.notif_code;
+    notif_code = notif_chain_elem->notif_code;
 
     if(!notif_chain_lookup_by_name_cb_fn){
         printf("notif_chain_lookup_by_name_cb CB not registered\n");
@@ -532,11 +510,11 @@ notif_chain_process_remote_subscriber_request(
             assert(0);
         case SUBS_TO_PUB_NOTIF_C_SUBSCRIBE:
             notif_chain_subscribe(notif_chain_name,
-                &notif_chain_elem);
+                notif_chain_elem);
         break;
         case SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE:
             notif_chain_unsubscribe(notif_chain_name,
-                &notif_chain_elem);
+                notif_chain_elem);
         break;
         case SUBS_TO_PUB_NOTIFY_C_NOTIFY_ALL:
         break;
@@ -546,9 +524,12 @@ notif_chain_process_remote_subscriber_request(
         default:
             return false;
     }
+    notif_chain_free_notif_chain_elem(notif_chain_elem);
+    return true;
 }
 
-/* APIs to be used by client/subscribers*/
+/* APIs to be used by client/subscribers to subscribe
+ * with publishers*/
 bool
 notif_chain_subscribe_by_callback(
         char *notif_chain_name,
@@ -582,25 +563,17 @@ notif_chain_subscribe_by_inet_skt(
         char *publisher_addr,
         uint16_t publisher_port_no){
 
-    uint32_t msg_size = NOTIF_NAME_SIZE +
-                        sizeof(notif_chain_subscriber_msg_format_t) +
-                        key_size;
 
-    char *msg = calloc(1, msg_size);
+    char *subs_tlv_buff = NULL;
+    uint32_t subs_tlv_buff_size;
+    notif_chain_elem_t notif_chain_elem;
 
-    strncpy(msg, notif_chain_name, NOTIF_NAME_SIZE);
-
-    notif_chain_subscriber_msg_format_t *
-        notif_chain_subscriber_msg_format = 
-        (notif_chain_subscriber_msg_format_t *)(msg + NOTIF_NAME_SIZE);
-
-    notif_chain_subscriber_msg_format->client_id = client_id;
-
-    notif_chain_subscriber_msg_format->notif_code =
-        SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
+    memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
+    notif_chain_elem.client_id = client_id;
+    notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
 
     notif_chain_comm_channel_t *notif_chain_comm_channel = 
-        &notif_chain_subscriber_msg_format->notif_chain_comm_channel;
+        &notif_chain_elem.notif_chain_comm_channel;
 
     notif_chain_comm_channel->notif_ch_type = NOTIF_C_INET_SOCKETS;
     
@@ -610,10 +583,29 @@ notif_chain_subscribe_by_inet_skt(
     NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel) = subs_port_no;
     NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel) = protocol_no;
 
-    int rc = notif_chain_send_msg_to_publisher(publisher_addr, 
-                                      publisher_port_no,
-                                      msg, msg_size);
-    free(msg);
+    subs_tlv_buff_size = notif_chain_serialize_notif_chain_elem(
+                            notif_chain_name,
+                            &notif_chain_elem,
+                            0,
+                            0,
+                            &subs_tlv_buff);
+
+    if(!subs_tlv_buff_size){
+        printf("%s() : Error : Msg send to publisher failed\n",
+                __FUNCTION__);
+        return false;
+    }
+
+    notif_chain_send_msg_to_publisher(publisher_addr, 
+            publisher_port_no,
+            subs_tlv_buff,
+            subs_tlv_buff_size);
+
+    notif_chain_free_notif_chain_elem_internals(
+        &notif_chain_elem);
+
+    free(subs_tlv_buff);
+    subs_tlv_buff = NULL;
     return true;
 }
 
@@ -627,6 +619,46 @@ notif_chain_subscribe_by_unix_skt(
         char *publisher_addr,
         uint16_t publisher_port_no){
 
+    char *subs_tlv_buff = NULL;
+    uint32_t subs_tlv_buff_size;
+    notif_chain_elem_t notif_chain_elem;
+
+    memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
+    notif_chain_elem.client_id = client_id;
+    notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
+
+    notif_chain_comm_channel_t *notif_chain_comm_channel = 
+        &notif_chain_elem.notif_chain_comm_channel;
+
+    notif_chain_comm_channel->notif_ch_type = NOTIF_C_AF_UNIX;
+   
+    strncpy(NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel),
+            subs_unix_skt_name, 
+            NOTIF_C_COMM_CHANNEL_UNIX_SKT_NAME_VALUE_LEN);
+
+    subs_tlv_buff_size = notif_chain_serialize_notif_chain_elem(
+                            notif_chain_name,
+                            &notif_chain_elem,
+                            0,
+                            0,
+                            &subs_tlv_buff);
+
+    if(!subs_tlv_buff_size){
+        printf("%s() : Error : Msg send to publisher failed\n",
+                __FUNCTION__);
+        return false;
+    }
+
+    notif_chain_send_msg_to_publisher(publisher_addr, 
+            publisher_port_no,
+            subs_tlv_buff,
+            subs_tlv_buff_size);
+
+    notif_chain_free_notif_chain_elem_internals(
+        &notif_chain_elem);
+
+    free(subs_tlv_buff);
+    subs_tlv_buff = NULL;
     return true;
 }
 
@@ -640,9 +672,51 @@ notif_chain_subscribe_msgq(
         char *publisher_addr,
         uint16_t publisher_port_no){
 
+    char *subs_tlv_buff = NULL;
+    uint32_t subs_tlv_buff_size;
+    notif_chain_elem_t notif_chain_elem;
+
+    memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
+    notif_chain_elem.client_id = client_id;
+    notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
+
+    notif_chain_comm_channel_t *notif_chain_comm_channel = 
+        &notif_chain_elem.notif_chain_comm_channel;
+
+    notif_chain_comm_channel->notif_ch_type = NOTIF_C_MSG_Q;
+   
+    strncpy(NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel),
+            subs_msgq_name,
+            NOTIF_C_COMM_CHANNEL_MSGQ_NAME_VALUE_LEN);
+
+    subs_tlv_buff_size = notif_chain_serialize_notif_chain_elem(
+                            notif_chain_name,
+                            &notif_chain_elem,
+                            0,
+                            0,
+                            &subs_tlv_buff);
+
+    if(!subs_tlv_buff_size){
+        printf("%s() : Error : Msg send to publisher failed\n",
+                __FUNCTION__);
+        return false;
+    }
+
+    notif_chain_send_msg_to_publisher(publisher_addr, 
+            publisher_port_no,
+            subs_tlv_buff,
+            subs_tlv_buff_size);
+
+    notif_chain_free_notif_chain_elem_internals(
+        &notif_chain_elem);
+
+    free(subs_tlv_buff);
+    subs_tlv_buff = NULL;
     return true;
 }
 
+/* APIs for Rx/Tx Msgs between Publisher and Subscribers
+ * Over Network UDP Sockets*/
 static int
 notif_chain_send_udp_msg(char *dest_ip_addr,
                          uint16_t dest_port_no,
@@ -1005,27 +1079,4 @@ notif_chain_deserialize_notif_chain_elem(
       
     return notif_chain_elem;
 }   
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
