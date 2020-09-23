@@ -232,7 +232,9 @@ _network_start_pkt_receiver_thread(void *arg){
     publisher_addr.sin_family      = AF_INET;
     publisher_addr.sin_port        = 2000;
     publisher_addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(udp_sock_fd, (struct sockaddr *)&publisher_addr, sizeof(struct sockaddr)) == -1) {
+
+    if (bind(udp_sock_fd, (struct sockaddr *)&publisher_addr, 
+		sizeof(struct sockaddr)) == -1) {
         printf("Error : socket bind failed\n");
         return 0;
     }
@@ -250,9 +252,9 @@ _network_start_pkt_receiver_thread(void *arg){
     while(1){
 
         memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
-        
+        printf("blocking at select \n"); 
         select(udp_sock_fd + 1, &active_sock_fd_set, NULL, NULL, NULL);
-
+		printf("select unblocked\n");
         if(FD_ISSET(udp_sock_fd, &active_sock_fd_set)){
 
             memset(recv_buffer, 0, MAX_PACKET_BUFFER_SIZE);

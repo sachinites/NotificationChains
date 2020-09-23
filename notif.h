@@ -238,7 +238,7 @@ bool
 notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
                 notif_chain_elem_t *notif_chain_elem);
 
-bool
+void
 notif_chain_invoke(notif_chain_t *notif_chain,
                 notif_chain_elem_t *notif_chain_elem);
 
