@@ -41,24 +41,41 @@
 #include "notif.h"
 #include "utils.h"
 
-static notif_chain_lookup_by_name_cb 
-	notif_chain_lookup_by_name_cb_fn;
+static notif_chain_db_t notif_chain_db = {0};
+
+static void
+notif_chain_register_notif_chain(notif_chain_t *notif_chain){
+
+    notif_chain_t *notif_chain_head = notif_chain_db.notif_chain_head;
+    notif_chain_db.notif_chain_head = notif_chain;
+    notif_chain->prev = 0;
+    notif_chain->next = notif_chain_head;
+    if(notif_chain_head)
+        notif_chain_head->prev = notif_chain;
+}
+
+static notif_chain_t *
+notif_chain_lookup_notif_chain_by_name(char *notif_chain_name){
+
+    notif_chain_t *notif_chain = notif_chain_db.notif_chain_head;
+    for( ; notif_chain; notif_chain = notif_chain->next){
+        if(strncmp(notif_chain->name, notif_chain_name, NOTIF_NAME_SIZE) == 0)
+            return notif_chain;
+    }
+    return 0;
+}
 
 void
 notif_chain_init(notif_chain_t *notif_chain,
 		char *chain_name,
 		notif_chain_comp_cb comp_cb,
-		app_key_data_print_cb print_cb,
-		notif_chain_lookup_by_name_cb 
-		_notif_chain_lookup_by_name_cb_fn){
+		app_key_data_print_cb print_cb) {
 
 	memset(notif_chain, 0, sizeof(notif_chain_t));
 	strncpy(notif_chain->name, chain_name, sizeof(notif_chain->name));
 	notif_chain->name[sizeof(notif_chain->name) -1] = '\0';
 	notif_chain->comp_cb = comp_cb;
 	notif_chain->print_cb = print_cb;
-	assert(notif_chain_lookup_by_name_cb_fn == NULL);
-	notif_chain_lookup_by_name_cb_fn = _notif_chain_lookup_by_name_cb_fn;
 }
 
 void
@@ -333,12 +350,7 @@ notif_chain_subscribe(char *notif_chain_name,
 
 	notif_ch_type_t notif_ch_type = NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem);
 
-	if(!notif_chain_lookup_by_name_cb_fn){
-		printf("notif_chain_lookup_by_name_cb CB not registered\n");
-		return false;
-	}
-
-	notif_chain = (notif_chain_lookup_by_name_cb_fn)(notif_chain_name);
+	notif_chain = (notif_chain_lookup_notif_chain_by_name)(notif_chain_name);
 	if(!notif_chain){
 		printf("Appln dont have Notif Chain with name %s\n", 
 				notif_chain_name);
@@ -366,12 +378,7 @@ notif_chain_unsubscribe(char *notif_chain_name,
 
 	notif_ch_type_t notif_ch_type = NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem);
 
-	if(!notif_chain_lookup_by_name_cb_fn){
-		printf("notif_chain_lookup_by_name_cb CB not registered\n");
-		return false;
-	}
-
-	notif_chain = (notif_chain_lookup_by_name_cb_fn)(notif_chain_name);
+	notif_chain = notif_chain_lookup_notif_chain_by_name(notif_chain_name);
 
 	if(!notif_chain){
 		printf("Appln dont have Notif Chain with name %s\n", 

@@ -43,8 +43,6 @@
 extern void
 create_subscriber_thread();
 
-void network_start_pkt_receiver_thread(void );
-
 static notif_chain_t notif_chain;
 
 void 
@@ -124,19 +122,6 @@ main_menu(rt_table_t *rt){
     }
 }
 
-/* Publisher has to register the callback function
- * with the library so that library can get the
- * notif_chain object created by Publisher by name*/
-static notif_chain_t *
-get_notif_chain(char *notif_chain_name){
-
-    /* Publisher maintains only one notif chain
-     * in this example, but there is no such restriction
-     * , publisher can create as many notification
-     * chains as he wants*/
-    return &notif_chain;    
-}
-
 int
 rt_entry_comp_fn(void *key_data1, 
                  uint32_t key_data1_size, 
@@ -171,7 +156,7 @@ rt_entry_keys_print_fn(void *keys, uint32_t key_size,
 int
 main(int argc, char **argv){
 
-    /*Published is in-charge of the Data source
+    /* Publisher is in-charge of the Data source
      * i.e. Routing Table in this example*/
     rt_table_t rt;
     rt_init_rt_table(&rt);
@@ -181,8 +166,7 @@ main(int argc, char **argv){
     notif_chain_init(&notif_chain,
         "notif_chain_rt_table",
         rt_entry_comp_fn,
-        rt_entry_keys_print_fn,
-        get_notif_chain);
+        rt_entry_keys_print_fn);
 
     /* thread a client here. We will create one of the thread 
      * as a subscriber to test notification chains using callbacks.

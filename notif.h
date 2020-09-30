@@ -46,9 +46,6 @@ typedef char * (*app_key_data_print_cb)(void *data,
                         char *outbuffer,
                         uint32_t outbuffer_size);
 
-typedef notif_chain_t * 
-    (*notif_chain_lookup_by_name_cb)(char *notif_chain_name);
-
 #define NOTIF_NAME_SIZE 32
 
 typedef enum notif_ch_type_{
@@ -211,7 +208,14 @@ struct notif_chain_{
      * notif_chain_elem_t
      * */
     notif_chain_elem_t *head;
+	struct notif_chain_ *prev;
+	struct notif_chain_ *next;
 };
+
+typedef struct notif_chain_db_ {
+
+	notif_chain_t *notif_chain_head;
+} notif_chain_db_t;
 
 void
 notif_chain_free_notif_chain_elem(
@@ -224,8 +228,7 @@ void
 notif_chain_init(notif_chain_t *notif_chain,
                  char *chain_name,
                  notif_chain_comp_cb comp_cb,
-                 app_key_data_print_cb print_cb,
-                 notif_chain_lookup_by_name_cb notif_chain_lookup_by_name_cb_fn);
+                 app_key_data_print_cb print_cb);
 
 void
 notif_chain_delete(notif_chain_t *notif_chain);
