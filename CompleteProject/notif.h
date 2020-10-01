@@ -230,12 +230,27 @@ notif_chain_init(notif_chain_t *notif_chain,
                  notif_chain_comp_cb comp_cb,
                  app_key_data_print_cb print_cb);
 
+bool
+notif_chain_is_duplicate_notif_chain_element(
+                notif_chain_elem_t *notif_chain_elem,
+                uint32_t client_id,
+                void *app_key_data,
+                uint32_t app_key_data_size);
+
+notif_chain_elem_t *
+notif_chain_lookup_notif_chain_element(
+				notif_chain_t *notif_chain,
+				uint32_t client_id,
+				void *app_key_data,
+				uint32_t app_key_data_size);
+
 void
 notif_chain_delete(notif_chain_t *notif_chain);
 
 bool
 notif_chain_register_chain_element(notif_chain_t *notif_chain,
-                notif_chain_elem_t *notif_chain_elem);
+                notif_chain_elem_t *notif_chain_elem,
+				bool register_malloc);
 
 bool
 notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
@@ -263,7 +278,8 @@ notif_chain_elem_remove(notif_chain_t *notif_chain,
 
 bool
 notif_chain_subscribe(char *notif_name, 
-                      notif_chain_elem_t *notif_chain_elem);
+                      notif_chain_elem_t *notif_chain_elem,
+					  bool request_malloc);
 
 bool
 notif_chain_unsubscribe(char *notif_name, 

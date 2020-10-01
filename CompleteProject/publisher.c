@@ -233,15 +233,15 @@ _network_start_pkt_receiver_thread(void *arg){
 
     struct sockaddr_in subscriber_addr;
     FD_SET(udp_sock_fd, &backup_sock_fd_set);
-    int bytes_recvd, addr_len;
-
+    int bytes_recvd = 0,
+		addr_len = sizeof(subscriber_addr);
+	
     while(1){
 
         memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
-        printf("blocking at select \n"); 
         select(udp_sock_fd + 1, &active_sock_fd_set, NULL, NULL, NULL);
-		printf("select unblocked\n");
-        if(FD_ISSET(udp_sock_fd, &active_sock_fd_set)){
+        
+		if(FD_ISSET(udp_sock_fd, &active_sock_fd_set)){
 
             memset(recv_buffer, 0, MAX_PACKET_BUFFER_SIZE);
             bytes_recvd = recvfrom(udp_sock_fd, (char *)recv_buffer,
