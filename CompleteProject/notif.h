@@ -47,6 +47,7 @@ typedef char * (*app_key_data_print_cb)(void *data,
                         uint32_t outbuffer_size);
 
 #define NOTIF_NAME_SIZE 32
+#define NOTIF_CHAIN_PROTO	240
 
 typedef enum notif_ch_type_{
 
@@ -143,9 +144,8 @@ typedef struct notif_chain_comm_channel_{
         } unix_skt;
         /*Via INET_SOCKETS*/
         struct {
-
             uint32_t ip_addr;
-            uint8_t port_no;
+            uint16_t port_no;
             uint8_t protocol_no; /*UDP or TCP or simply IP*/
         } inet_skt_info;
     }u;
@@ -231,7 +231,7 @@ notif_chain_init(notif_chain_t *notif_chain,
                  app_key_data_print_cb print_cb);
 
 bool
-notif_chain_is_duplicate_notif_chain_element(
+notif_chain_is_matching_notif_chain_element(
                 notif_chain_elem_t *notif_chain_elem,
                 uint32_t client_id,
                 void *app_key_data,

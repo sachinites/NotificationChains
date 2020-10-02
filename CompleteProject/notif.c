@@ -173,25 +173,29 @@ notif_chain_register_chain_element(notif_chain_t *notif_chain,
 		return false;
 	}
 
-	if (request_malloc)	
-	new_notif_chain_elem =  (notif_chain_elem_t *)calloc(1,sizeof(notif_chain_elem_t));
-	else
-	new_notif_chain_elem = notif_chain_elem;
+	if (request_malloc)	{
+		
+		new_notif_chain_elem =  (notif_chain_elem_t *)calloc(1,sizeof(notif_chain_elem_t));
+		
+		if(!new_notif_chain_elem) return false;
 
-	if(!new_notif_chain_elem) return false;
+		memcpy(new_notif_chain_elem, notif_chain_elem, 
+				sizeof(notif_chain_elem_t));
 
-	memcpy(new_notif_chain_elem, notif_chain_elem, 
-			sizeof(notif_chain_elem_t));
-
-	if(notif_chain_elem->data.app_key_data){
-		new_notif_chain_elem->data.app_key_data = 
-			calloc(1, notif_chain_elem->data.app_key_data_size);
-		memcpy(new_notif_chain_elem->data.app_key_data,
-				notif_chain_elem->data.app_key_data, 
-				notif_chain_elem->data.app_key_data_size);
-		new_notif_chain_elem->data.app_key_data_size = 
-			notif_chain_elem->data.app_key_data_size;
+		if(notif_chain_elem->data.app_key_data){
+			new_notif_chain_elem->data.app_key_data = 
+				calloc(1, notif_chain_elem->data.app_key_data_size);
+			memcpy(new_notif_chain_elem->data.app_key_data,
+					notif_chain_elem->data.app_key_data, 
+					notif_chain_elem->data.app_key_data_size);
+			new_notif_chain_elem->data.app_key_data_size = 
+				notif_chain_elem->data.app_key_data_size;
+		}
 	}
+	else{
+		new_notif_chain_elem = notif_chain_elem;
+	}
+
 	notif_chain_elem_t *head = notif_chain->head;
 	notif_chain->head = new_notif_chain_elem;
 	new_notif_chain_elem->prev = 0;
@@ -382,30 +386,65 @@ notif_chain_dump(notif_chain_t *notif_chain){
 	char buffer[256];
 
 	notif_chain_elem_t *notif_chain_elem_curr;
+	notif_chain_comm_channel_t *
+		notif_chain_comm_channel;
 
 	printf("notif chain Name : %s\n", notif_chain->name);
 
 	ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain, notif_chain_elem_curr){
 
-		printf("\tprev %p next %p client_id %u app_key_data_ptr %p "
-				"app_key_data_size %u app_cb %p\n",
+		printf("client id : %u\n", notif_chain_elem_curr->client_id);
+		printf("\tprev %p next %p app_key_data_ptr %p "
+				"app_key_data_size %u\n",
 				notif_chain_elem_curr->prev,
 				notif_chain_elem_curr->next,
-				notif_chain_elem_curr->client_id,
 				notif_chain_elem_curr->data.app_key_data,
-				notif_chain_elem_curr->data.app_key_data_size,
-				NOTIF_CHAIN_ELEM_APP_CB(
-					(&notif_chain_elem_curr->notif_chain_comm_channel)));
-
+				notif_chain_elem_curr->data.app_key_data_size);
+		
 		if(notif_chain->print_cb){
 			notif_chain->print_cb(
 					notif_chain_elem_curr->data.app_key_data,
 					notif_chain_elem_curr->data.app_key_data_size,
 					buffer, sizeof(buffer));
-			printf("\tApp Key Data : \n");
+			printf("\tApp Key Data : ");
 			printf("%s\n", buffer);
 		}
 
+		notif_chain_comm_channel = 
+				&notif_chain_elem_curr->notif_chain_comm_channel;
+
+		printf("\tCommunication Channel info : ");
+
+		switch(notif_chain_comm_channel->notif_ch_type){
+		
+			case NOTIF_C_CALLBACKS:
+				printf("NOTIF_C_CALLBACKS : %p",
+					NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel));
+				break;
+			case NOTIF_C_MSG_Q:
+				printf("NOTIF_C_MSG_Q : %s",
+					NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel));
+				break;
+			case NOTIF_C_AF_UNIX:
+				printf("NOTIF_C_AF_UNIX : %s",
+					NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel));
+				break;
+			case NOTIF_C_INET_SOCKETS:	
+				printf("NOTIF_C_INET_SOCKETS : [%s : %u : %u]",
+					tcp_ip_covert_ip_n_to_p(
+						NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel), 0),
+					NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel),
+					NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel));
+				break;
+			case NOTIF_C_NOT_KNOWN:
+				printf("NOTIF_C_NOT_KNOWN");
+				break;
+			case NOTIF_C_ANY:
+				printf("NOTIF_C_ANY");
+				break;
+			default: ;
+		}
+		printf("\n\n");		
 	} ITERTAE_NOTIF_CHAIN_END(notif_chain, notif_chain_elem_curr);
 }
 
@@ -431,7 +470,8 @@ notif_chain_subscribe(char *notif_chain_name,
 		case NOTIF_C_MSG_Q:
 		case NOTIF_C_AF_UNIX:
 		case NOTIF_C_INET_SOCKETS:
-			notif_chain_register_chain_element(notif_chain, notif_chain_elem, request_malloc);
+			notif_chain_register_chain_element(
+				notif_chain, notif_chain_elem, request_malloc);
 			break;
 		case NOTIF_C_ANY:
 		case NOTIF_C_NOT_KNOWN:
@@ -465,7 +505,8 @@ notif_chain_unsubscribe(char *notif_chain_name,
 		case NOTIF_C_MSG_Q:
 		case NOTIF_C_AF_UNIX:
 		case NOTIF_C_INET_SOCKETS:
-			notif_chain_deregister_chain_element(notif_chain, notif_chain_elem);
+			notif_chain_deregister_chain_element(
+				notif_chain, notif_chain_elem);
 			break;
 		case NOTIF_C_ANY:
 		case NOTIF_C_NOT_KNOWN:
@@ -506,7 +547,7 @@ notif_chain_elem_remove(notif_chain_t *notif_chain,
  * 2. key is same
  * */
 bool
-notif_chain_is_duplicate_notif_chain_element(
+notif_chain_is_matching_notif_chain_element(
                 notif_chain_elem_t *notif_chain_elem,
 				uint32_t client_id,
                 void *app_key_data,
@@ -538,7 +579,7 @@ notif_chain_lookup_notif_chain_element(
 	
 	ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain, notif_chain_elem){
 
-		if (notif_chain_is_duplicate_notif_chain_element(
+		if (notif_chain_is_matching_notif_chain_element(
 										notif_chain_elem,
 										client_id,
 										app_key_data,
@@ -609,13 +650,18 @@ notif_chain_subscribe_by_callback(
 	memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
 	notif_chain_elem.client_id = client_id;
 	notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
-	notif_chain_elem.data.app_key_data = key;
+	
+	notif_chain_elem.data.app_key_data = calloc(1, key_size);
+	memcpy((char *)notif_chain_elem.data.app_key_data,
+		   (char *)key, key_size);
 	notif_chain_elem.data.app_key_data_size = key_size;
+
 	notif_chain_comm_channel_t *
 		notif_chain_comm_channel = &notif_chain_elem.notif_chain_comm_channel;
 	notif_chain_comm_channel->notif_ch_type = NOTIF_C_CALLBACKS;
 	NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel) = cb;
-	return notif_chain_subscribe(notif_chain_name, &notif_chain_elem, true);
+	notif_chain_subscribe(notif_chain_name, &notif_chain_elem, true);
+    notif_chain_free_notif_chain_elem_internals(&notif_chain_elem);
 }
 
 bool
@@ -639,6 +685,12 @@ notif_chain_subscribe_by_inet_skt(
 	notif_chain_elem.client_id = client_id;
 	notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
 
+	notif_chain_elem.data.app_key_data = calloc(1, key_size);
+
+	memcpy((char *)notif_chain_elem.data.app_key_data,
+		   (char *)key, key_size);
+	notif_chain_elem.data.app_key_data_size = key_size;
+
 	notif_chain_comm_channel_t *notif_chain_comm_channel = 
 		&notif_chain_elem.notif_chain_comm_channel;
 
@@ -648,6 +700,7 @@ notif_chain_subscribe_by_inet_skt(
 		tcp_ip_covert_ip_p_to_n(subs_addr);
 
 	NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel) = subs_port_no;
+
 	NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel) = protocol_no;
 
 	subs_tlv_buff_size = notif_chain_serialize_notif_chain_elem(
@@ -694,6 +747,12 @@ notif_chain_subscribe_by_unix_skt(
 	notif_chain_elem.client_id = client_id;
 	notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
 
+	notif_chain_elem.data.app_key_data = calloc(1, key_size);
+
+	memcpy((char *)notif_chain_elem.data.app_key_data,
+		   (char *)key, key_size);
+	notif_chain_elem.data.app_key_data_size = key_size;
+	
 	notif_chain_comm_channel_t *notif_chain_comm_channel = 
 		&notif_chain_elem.notif_chain_comm_channel;
 
@@ -1011,8 +1070,7 @@ notif_chain_serialize_notif_chain_elem(
 			output_buff = tlv_buffer_insert_tlv(output_buff,
 					NOTIF_C_IP_ADDR_TLV,
 					NOTIF_C_IP_ADDR_VALUE_LEN,
-					tcp_ip_covert_ip_n_to_p(
-						NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel), 0));
+					(char *)&(NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel)));
 
 			output_buff = tlv_buffer_insert_tlv(output_buff,
 					NOTIF_C_PORT_NO_TLV,
@@ -1120,12 +1178,12 @@ notif_chain_deserialize_notif_chain_elem(
 				memcpy((char *)&(NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel)),
 						tlv_value, tlv_len);
 				break;
-			case NOTIF_C_NOTIF_CODE_TLV:
-				memcpy((char *)&notif_chain_elem->notif_code,
-						tlv_value, tlv_len);
-				break;
 			case NOTIF_C_PROTOCOL_NO_TLV:
 				memcpy((char *)&(NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel)),
+						tlv_value, tlv_len);
+				break;
+			case NOTIF_C_NOTIF_CODE_TLV:
+				memcpy((char *)&notif_chain_elem->notif_code,
 						tlv_value, tlv_len);
 				break;
 			case NOTIF_C_APP_KEY_DATA_TLV:

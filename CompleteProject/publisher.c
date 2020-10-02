@@ -186,12 +186,11 @@ main(int argc, char **argv){
      * Notif chains uses callbacks to notify the subscribers only
      * for local subscribers i.e. subscribers running as a thread
      * of publisher process*/
-
      create_subscriber_thread(1);
      create_subscriber_thread(2);
      create_subscriber_thread(3);
-
-    /*Start the publisher pkt receiever thread*/
+    
+	/*Start the publisher pkt receiever thread*/
      network_start_pkt_receiver_thread();
 
     /* Start the publisher database
