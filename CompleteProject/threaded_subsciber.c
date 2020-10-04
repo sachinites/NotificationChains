@@ -78,18 +78,6 @@ subscriber_thread_fn(void *arg){
     rt_entry_keys.mask = 32;
     notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
-    strncpy(rt_entry_keys.dest, "122.1.1.4", 16);
-    rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
-
-    strncpy(rt_entry_keys.dest, "122.1.1.5", 16);
-    rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
-
-    strncpy(rt_entry_keys.dest, "122.1.1.6", 16);
-    rt_entry_keys.mask = 32;
-    notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
-
     pause();
 }
 

@@ -45,6 +45,9 @@
 
 #define MAX(a, b) (a > b ? a : b)
 
+#define offsetof(structure, field)	\
+	((size_t)&(((structure *)0)->field))
+
 /*Macro to Type Length Value reply
  * uint8_t * - start_ptr, IN
  * uint8_t - type, OUT

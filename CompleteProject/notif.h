@@ -35,6 +35,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <unistd.h>
+#include "gluethread/glthread.h"
 
 typedef struct notif_chain_elem_ notif_chain_elem_t;
 typedef struct notif_chain_ notif_chain_t;
@@ -46,7 +47,7 @@ typedef char * (*app_key_data_print_cb)(void *data,
                         char *outbuffer,
                         uint32_t outbuffer_size);
 
-#define NOTIF_NAME_SIZE 32
+#define NOTIF_NAME_SIZE 	32
 #define NOTIF_CHAIN_PROTO	240
 
 typedef enum notif_ch_type_{
@@ -65,8 +66,6 @@ notif_chain_get_str_notif_ch_type(
 
     switch(notif_ch_type){
 
-        case NOTIF_C_ANY:
-            return "NOTIF_C_ANY";
         case NOTIF_C_CALLBACKS:
             return "NOTIF_C_CALLBACKS";
         case NOTIF_C_MSG_Q:
@@ -146,10 +145,15 @@ typedef struct notif_chain_comm_channel_{
         struct {
             uint32_t ip_addr;
             uint16_t port_no;
-            uint8_t protocol_no; /*UDP or TCP or simply IP*/
+            uint8_t protocol_no; /*UDP or TCP*/
+			uint32_t skf_fd;	 /*Skt FD created by the Publisher*/
         } inet_skt_info;
     }u;
+	uint32_t ref_count;			/* No of entries using this comm channel */
+	glthread_t glue;
 } notif_chain_comm_channel_t;
+GLTHREAD_TO_STRUCT(glthread_glue_to_notif_chain_comm_channel,
+					notif_chain_comm_channel_t, glue);
 
 #define NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel_ptr)           \
     (notif_chain_comm_channel_ptr->u.app_cb)
@@ -163,12 +167,13 @@ typedef struct notif_chain_comm_channel_{
     (notif_chain_comm_channel_ptr->u.inet_skt_info.port_no)
 #define NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel_ptr)            \
     (notif_chain_comm_channel_ptr->u.inet_skt_info.protocol_no)
+#define NOTIF_CHAIN_ELEM_SKT_FD(notif_chain_comm_channel_ptr)			\
+	(notif_chain_comm_channel_ptr->u.inet_skt_info.skf_fd)
 
 struct notif_chain_elem_{
 
-    notif_chain_elem_t *prev;
-    notif_chain_elem_t *next;
-    
+	notif_chain_t *notif_chain;
+   
     uint32_t client_id;
     notif_ch_notify_opcode_t notif_code;
     
@@ -188,11 +193,14 @@ struct notif_chain_elem_{
     } data;
 
     notif_chain_comm_channel_t 
-        notif_chain_comm_channel;
+        *notif_chain_comm_channel;
+	glthread_t glue;
 };
+GLTHREAD_TO_STRUCT(glthread_glue_to_notif_chain_elem,
+					notif_chain_elem_t, glue);
 
-#define NOTIF_CHAIN_ELEM_TYPE(notif_chain_elem_ptr)                     \
-    (notif_chain_elem_ptr->notif_chain_comm_channel.notif_ch_type)
+#define NOTIF_CHAIN_COMM_CH_TYPE(notif_chain_elem_ptr)                     \
+    (notif_chain_elem_ptr->notif_chain_comm_channel->notif_ch_type)
 
 struct notif_chain_{
 
@@ -204,18 +212,51 @@ struct notif_chain_{
      * */
     notif_chain_comp_cb comp_cb;
     app_key_data_print_cb print_cb;
+
     /* Head of the linked list containing
      * notif_chain_elem_t
      * */
-    notif_chain_elem_t *head;
-	struct notif_chain_ *prev;
-	struct notif_chain_ *next;
+    glthread_t notif_chain_elem_head;
+	glthread_t glue;
 };
+GLTHREAD_TO_STRUCT(glthread_glue_to_notif_chain,
+					notif_chain_t, glue);
+
+typedef struct comm_channel_per_client_db_{
+
+	uint32_t client_id;
+	glthread_t comm_channel_head;
+	glthread_t glue;	
+} comm_channel_per_client_db_t;
+GLTHREAD_TO_STRUCT(glthread_glue_to_comm_channel_per_client_db,
+                    comm_channel_per_client_db_t, glue);
 
 typedef struct notif_chain_db_ {
 
-	notif_chain_t *notif_chain_head;
+	glthread_t notif_chain_head;
+	glthread_t comm_channel_per_client_db_head;
 } notif_chain_db_t;
+
+notif_chain_comm_channel_t *
+notif_chain_lookup_matching_comm_channel_per_client(
+		notif_chain_db_t *notif_chain_db,
+		uint32_t client_id,
+		notif_chain_comm_channel_t *notif_chain_comm_channel_template);
+
+notif_chain_comm_channel_t *
+notif_chain_record_comm_channel_per_client(
+		notif_chain_db_t *notif_chain_db,
+		uint32_t client_id,
+        notif_chain_comm_channel_t *notif_chain_comm_channel_template);	
+
+bool
+notif_chain_communication_channel_match(
+                notif_chain_comm_channel_t *channel1,
+                notif_chain_comm_channel_t *channel2);
+
+void
+notif_chain_release_communication_channel_resources(
+                notif_chain_comm_channel_t *channel);
 
 void
 notif_chain_free_notif_chain_elem(
@@ -249,8 +290,7 @@ notif_chain_delete(notif_chain_t *notif_chain);
 
 bool
 notif_chain_register_chain_element(notif_chain_t *notif_chain,
-                notif_chain_elem_t *notif_chain_elem,
-				bool register_malloc);
+                notif_chain_elem_t *notif_chain_elem);
 
 bool
 notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
@@ -264,22 +304,8 @@ void
 notif_chain_dump(notif_chain_t *notif_chain);
 
 bool
-notif_chain_communication_channel_match(
-                notif_chain_comm_channel_t *channel1,
-                notif_chain_comm_channel_t *channel2);
-
-void
-notif_chain_release_communication_channel_resources(
-                notif_chain_comm_channel_t *channel);
-
-void
-notif_chain_elem_remove(notif_chain_t *notif_chain,
-                notif_chain_elem_t *notif_chain_elem);
-
-bool
 notif_chain_subscribe(char *notif_name, 
-                      notif_chain_elem_t *notif_chain_elem,
-					  bool request_malloc);
+                      notif_chain_elem_t *notif_chain_elem);
 
 bool
 notif_chain_unsubscribe(char *notif_name, 
@@ -289,16 +315,6 @@ bool
 notif_chain_process_remote_subscriber_request(
                      char *subs_tlv_buffer,
                      uint32_t subs_tlv_buffer_size);
-
-#define ITERTAE_NOTIF_CHAIN_BEGIN(notif_chain_ptr, notif_chain_elem_ptr)  \
-{                                                                         \
-    notif_chain_elem_t *_next_notif_chain_elem;                           \
-    for(notif_chain_elem_ptr = notif_chain_ptr->head;                     \
-        notif_chain_elem_ptr;                                             \
-        notif_chain_elem_ptr = _next_notif_chain_elem) {                  \
-        _next_notif_chain_elem = notif_chain_elem_ptr->next;
-
-#define ITERTAE_NOTIF_CHAIN_END(notif_chain_ptr, notif_chain_elem_ptr)  }}
 
 /* Subscription APIs to be used by Subscribers*/
 int
