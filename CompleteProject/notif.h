@@ -156,19 +156,19 @@ GLTHREAD_TO_STRUCT(glthread_glue_to_notif_chain_comm_channel,
 					notif_chain_comm_channel_t, glue);
 
 #define NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel_ptr)           \
-    (notif_chain_comm_channel_ptr->u.app_cb)
+    ((notif_chain_comm_channel_ptr)->u.app_cb)
 #define NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel_ptr)        \
-    (notif_chain_comm_channel_ptr->u.mq.msgQ_name)
+    ((notif_chain_comm_channel_ptr)->u.mq.msgQ_name)
 #define NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel_ptr)         \
-    (notif_chain_comm_channel_ptr->u.unix_skt.unix_skt_name)
+    ((notif_chain_comm_channel_ptr)->u.unix_skt.unix_skt_name)
 #define NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel_ptr)          \
-    (notif_chain_comm_channel_ptr->u.inet_skt_info.ip_addr)
+    ((notif_chain_comm_channel_ptr)->u.inet_skt_info.ip_addr)
 #define NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel_ptr)          \
-    (notif_chain_comm_channel_ptr->u.inet_skt_info.port_no)
+    ((notif_chain_comm_channel_ptr)->u.inet_skt_info.port_no)
 #define NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel_ptr)            \
-    (notif_chain_comm_channel_ptr->u.inet_skt_info.protocol_no)
+    ((notif_chain_comm_channel_ptr)->u.inet_skt_info.protocol_no)
 #define NOTIF_CHAIN_ELEM_SKT_FD(notif_chain_comm_channel_ptr)			\
-	(notif_chain_comm_channel_ptr->u.inet_skt_info.skf_fd)
+	((notif_chain_comm_channel_ptr)->u.inet_skt_info.skf_fd)
 
 struct notif_chain_elem_{
 
@@ -239,13 +239,11 @@ typedef struct notif_chain_db_ {
 
 notif_chain_comm_channel_t *
 notif_chain_lookup_matching_comm_channel_per_client(
-		notif_chain_db_t *notif_chain_db,
 		uint32_t client_id,
 		notif_chain_comm_channel_t *notif_chain_comm_channel_template);
 
 notif_chain_comm_channel_t *
 notif_chain_record_comm_channel_per_client(
-		notif_chain_db_t *notif_chain_db,
 		uint32_t client_id,
         notif_chain_comm_channel_t *notif_chain_comm_channel_template);	
 
@@ -257,6 +255,13 @@ notif_chain_communication_channel_match(
 void
 notif_chain_release_communication_channel_resources(
                 notif_chain_comm_channel_t *channel);
+bool
+notif_chain_resurrect_communication_channel(
+        notif_chain_comm_channel_t *notif_chain_comm_channel);
+
+notif_chain_elem_t *
+notif_chain_notif_chain_elem_clone(
+    notif_chain_elem_t *notif_chain_elem);
 
 void
 notif_chain_free_notif_chain_elem(

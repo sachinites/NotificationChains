@@ -69,16 +69,16 @@ subscriber_thread_fn(void *arg){
     strncpy(rt_entry_keys.dest, "122.1.1.1", 16);
     rt_entry_keys.mask = 32;
     notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
-
-    strncpy(rt_entry_keys.dest, "122.1.1.2", 16);
+    
+	strncpy(rt_entry_keys.dest, "122.1.1.2", 16);
     rt_entry_keys.mask = 32;
     notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
 
     strncpy(rt_entry_keys.dest, "122.1.1.3", 16);
     rt_entry_keys.mask = 32;
     notif_chain_subscribe_by_callback("notif_chain_rt_table", &rt_entry_keys, sizeof(rt_entry_keys_t), client_id, test_cb);
-
-    pause();
+    
+	pause();
 }
 
 void

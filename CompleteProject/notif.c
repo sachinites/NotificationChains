@@ -188,11 +188,62 @@ notif_chain_elem_cmp_fn(void *elem1, void *elem2){
 	return 0;
 }
 
+notif_chain_elem_t *
+notif_chain_notif_chain_elem_clone(
+	notif_chain_elem_t *notif_chain_elem){
+
+	notif_chain_elem_t *new_notif_chain_elem = 
+		calloc(1, sizeof(notif_chain_elem_t));
+
+	memcpy(new_notif_chain_elem, notif_chain_elem,
+		sizeof(notif_chain_elem_t));
+
+	if(notif_chain_elem->data.app_key_data && 
+		notif_chain_elem->data.app_key_data_size){
+
+		new_notif_chain_elem->data.app_key_data = 
+			calloc(1, notif_chain_elem->data.app_key_data_size);
+		memcpy(new_notif_chain_elem->data.app_key_data,
+			   notif_chain_elem->data.app_key_data,
+			   notif_chain_elem->data.app_key_data_size);
+		new_notif_chain_elem->data.app_key_data_size = 
+			  notif_chain_elem->data.app_key_data_size;
+	}
+
+	if(notif_chain_elem->data.app_data_to_notify &&
+		notif_chain_elem->data.app_data_to_notify_size){
+
+		new_notif_chain_elem->data.app_data_to_notify = 
+			calloc(1, notif_chain_elem->data.app_data_to_notify_size);
+		memcpy(new_notif_chain_elem->data.app_data_to_notify,
+				notif_chain_elem->data.app_data_to_notify,
+				notif_chain_elem->data.app_data_to_notify_size);
+		new_notif_chain_elem->data.app_data_to_notify_size = 
+				notif_chain_elem->data.app_data_to_notify_size;
+		new_notif_chain_elem->data.is_alloc_app_data_to_notify = true;
+	}
+
+	init_glthread(&new_notif_chain_elem->glue);
+
+	new_notif_chain_elem->notif_chain_comm_channel = 
+		calloc(1, sizeof(notif_chain_comm_channel_t));
+
+	memcpy(new_notif_chain_elem->notif_chain_comm_channel,
+		   notif_chain_elem->notif_chain_comm_channel,
+		   sizeof(notif_chain_comm_channel_t));
+		
+	init_glthread(&new_notif_chain_elem->notif_chain_comm_channel->glue);
+	new_notif_chain_elem->notif_chain_comm_channel->ref_count = 0;
+	
+	return new_notif_chain_elem;
+}
+
 bool
 notif_chain_register_chain_element(
 		notif_chain_t *notif_chain,
 		notif_chain_elem_t *notif_chain_elem){
 
+	notif_chain_elem_t *new_notif_chain_elem;
 	notif_chain_comm_channel_t *notif_chain_comm_channel,
 							   *registered_notif_chain_comm_channel;
 
@@ -204,34 +255,32 @@ notif_chain_register_chain_element(
 
 		return false;
 	}
+
+	new_notif_chain_elem = notif_chain_notif_chain_elem_clone(
+							notif_chain_elem);
 	
 	glthread_priority_insert(&notif_chain->notif_chain_elem_head,
-							 &notif_chain_elem->glue,
+							 &new_notif_chain_elem->glue,
 							 notif_chain_elem_cmp_fn,
 							 (int)(&((notif_chain_elem_t *)0)->glue));
 
-	notif_chain_elem->notif_chain = notif_chain;
-
 	/* Now handle communication channel */
-	notif_chain_comm_channel = notif_chain_elem->notif_chain_comm_channel;
+	notif_chain_comm_channel = new_notif_chain_elem->notif_chain_comm_channel;
 	assert(notif_chain_comm_channel);
 	
 	registered_notif_chain_comm_channel = 
 			notif_chain_record_comm_channel_per_client(
-				&notif_chain_db,
-			    notif_chain_elem->client_id,
+			    new_notif_chain_elem->client_id,
 				notif_chain_comm_channel);
 
 	if (registered_notif_chain_comm_channel !=
 			notif_chain_comm_channel) {
 		/* It means, existing communication channel is 
  		 * there in db */
-		registered_notif_chain_comm_channel->ref_count++;
-		notif_chain_elem->notif_chain_comm_channel = 
+		new_notif_chain_elem->notif_chain_comm_channel = 
 				registered_notif_chain_comm_channel;
 		free(notif_chain_comm_channel);
-	}	
-					
+	}			
 	return true;
 }
 
@@ -411,11 +460,62 @@ notif_chain_invoke(notif_chain_t *notif_chain,
 	} ITERATE_GLTHREAD_END(&notif_chain->notif_chain_elem_head, curr);
 }
 
+static char *
+notif_chain_dump_comm_channel(
+		notif_chain_comm_channel_t 
+			*notif_chain_comm_channel){
+
+	int rc = 0;
+	static char buffer[128];
+	
+	memset(buffer, 0 , sizeof(buffer));
+
+	rc = sprintf(buffer, "\tCommunication Channel info : ref count : %u ",
+			notif_chain_comm_channel->ref_count);
+
+	switch(notif_chain_comm_channel->notif_ch_type){
+
+		case NOTIF_C_CALLBACKS:
+			rc += sprintf(buffer + rc, "%s : %p",
+					notif_chain_get_str_notif_ch_type(
+						notif_chain_comm_channel->notif_ch_type),
+					NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel));
+			break;
+		case NOTIF_C_MSG_Q:
+			rc += sprintf(buffer + rc, "%s : %s",
+					notif_chain_get_str_notif_ch_type(
+						notif_chain_comm_channel->notif_ch_type),
+					NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel));
+			break;
+		case NOTIF_C_AF_UNIX:
+			rc += sprintf(buffer + rc, "%s : %s",
+					notif_chain_get_str_notif_ch_type(
+						notif_chain_comm_channel->notif_ch_type),
+					NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel));
+			break;
+		case NOTIF_C_INET_SOCKETS:	
+			rc += sprintf(buffer + rc, "%s : [%s : %u : %u]",
+					notif_chain_get_str_notif_ch_type(
+						notif_chain_comm_channel->notif_ch_type),
+					tcp_ip_covert_ip_n_to_p(
+						NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel), 0),
+					NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel),
+					NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel));
+			break;
+		case NOTIF_C_NOT_KNOWN:
+			rc += sprintf(buffer + rc, "NOTIF_C_NOT_KNOWN");
+			break;
+		default: ;
+	}
+	return buffer;
+}
+
 void
 notif_chain_dump(notif_chain_t *notif_chain){
 
 	char buffer[256];
 	glthread_t *curr;
+	char *channel_info;
 	notif_chain_elem_t *notif_chain_elem_curr;
 	notif_chain_comm_channel_t *
 		notif_chain_comm_channel;
@@ -444,43 +544,9 @@ notif_chain_dump(notif_chain_t *notif_chain){
 		notif_chain_comm_channel = 
 				notif_chain_elem_curr->notif_chain_comm_channel;
 
-		printf("\tCommunication Channel info : ref count : %u",
-					notif_chain_comm_channel->ref_count);
+		channel_info = notif_chain_dump_comm_channel(notif_chain_comm_channel);
+		printf("%s", channel_info);
 
-		switch(notif_chain_comm_channel->notif_ch_type){
-		
-			case NOTIF_C_CALLBACKS:
-				printf("%s : %p",
-					notif_chain_get_str_notif_ch_type(
-						notif_chain_comm_channel->notif_ch_type),
-					NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel));
-				break;
-			case NOTIF_C_MSG_Q:
-				printf("%s : %s",
-					notif_chain_get_str_notif_ch_type(
-						notif_chain_comm_channel->notif_ch_type),
-					NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel));
-				break;
-			case NOTIF_C_AF_UNIX:
-				printf("%s : %s",
-					notif_chain_get_str_notif_ch_type(
-						notif_chain_comm_channel->notif_ch_type),
-					NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel));
-				break;
-			case NOTIF_C_INET_SOCKETS:	
-				printf("%s : [%s : %u : %u]",
-					notif_chain_get_str_notif_ch_type(
-						notif_chain_comm_channel->notif_ch_type),
-					tcp_ip_covert_ip_n_to_p(
-						NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel), 0),
-					NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel),
-					NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel));
-				break;
-			case NOTIF_C_NOT_KNOWN:
-				printf("NOTIF_C_NOT_KNOWN");
-				break;
-			default: ;
-		}
 		printf("\n\n");
 	} ITERATE_GLTHREAD_END(&notif_chain->notif_chain_elem_head, curr);	
 }
@@ -502,6 +568,10 @@ notif_chain_subscribe(char *notif_chain_name,
 		printf("Appln dont have Notif Chain with name %s\n", 
 				notif_chain_name);
 		return false;
+	}
+
+	if (!notif_chain_elem->notif_chain) {
+		notif_chain_elem->notif_chain = notif_chain;
 	}
 
 	switch(notif_ch_type){
@@ -678,12 +748,16 @@ notif_chain_subscribe_by_callback(
 		notif_chain_elem.data.app_key_data_size = key_size;
 	}
 
-	notif_chain_comm_channel_t *
-		notif_chain_comm_channel = notif_chain_elem.notif_chain_comm_channel;
-	notif_chain_comm_channel->notif_ch_type = NOTIF_C_CALLBACKS;
-	NOTIF_CHAIN_ELEM_APP_CB(notif_chain_comm_channel) = cb;
+	notif_chain_comm_channel_t notif_chain_comm_channel;
+	
+	 notif_chain_elem.notif_chain_comm_channel = 
+			&notif_chain_comm_channel;
+	notif_chain_comm_channel.notif_ch_type = NOTIF_C_CALLBACKS;
+	NOTIF_CHAIN_ELEM_APP_CB(&notif_chain_comm_channel) = cb;
 	notif_chain_subscribe(notif_chain_name, &notif_chain_elem);
-    notif_chain_free_notif_chain_elem_internals(&notif_chain_elem);
+    if(notif_chain_elem.data.app_key_data){
+        free(notif_chain_elem.data.app_key_data);
+    }
 }
 
 bool
@@ -709,24 +783,26 @@ notif_chain_subscribe_by_inet_skt(
 
 	/* For wild card subscription, key can be NULL */
 	if(key && key_size){
-		notif_chain_elem.data.app_key_data = calloc(1, key_size);
 
+		notif_chain_elem.data.app_key_data = calloc(1, key_size);
 		memcpy((char *)notif_chain_elem.data.app_key_data,
 				(char *)key, key_size);
 		notif_chain_elem.data.app_key_data_size = key_size;
 	}
 
-	notif_chain_comm_channel_t *notif_chain_comm_channel = 
-		notif_chain_elem.notif_chain_comm_channel;
+	notif_chain_comm_channel_t notif_chain_comm_channel;
 
-	notif_chain_comm_channel->notif_ch_type = NOTIF_C_INET_SOCKETS;
+	notif_chain_elem.notif_chain_comm_channel = 
+			&notif_chain_comm_channel;
 
-	NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel) = 
+	notif_chain_comm_channel.notif_ch_type = NOTIF_C_INET_SOCKETS;
+
+	NOTIF_CHAIN_ELEM_IP_ADDR(&notif_chain_comm_channel) = 
 		tcp_ip_covert_ip_p_to_n(subs_addr);
 
-	NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel) = subs_port_no;
+	NOTIF_CHAIN_ELEM_PORT_NO(&notif_chain_comm_channel) = subs_port_no;
 
-	NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel) = protocol_no;
+	NOTIF_CHAIN_ELEM_PROTO(&notif_chain_comm_channel) = protocol_no;
 
 	subs_tlv_buff_size = notif_chain_serialize_notif_chain_elem(
 			notif_chain_name,
@@ -746,9 +822,10 @@ notif_chain_subscribe_by_inet_skt(
 			subs_tlv_buff,
 			subs_tlv_buff_size);
 
-	notif_chain_free_notif_chain_elem_internals(
-			&notif_chain_elem);
-
+    if(notif_chain_elem.data.app_key_data){
+        free(notif_chain_elem.data.app_key_data);
+    }
+	
 	free(subs_tlv_buff);
 	subs_tlv_buff = NULL;
 	return true;
@@ -781,12 +858,14 @@ notif_chain_subscribe_by_unix_skt(
 		notif_chain_elem.data.app_key_data_size = key_size;
 	}
 
-	notif_chain_comm_channel_t *notif_chain_comm_channel = 
-		notif_chain_elem.notif_chain_comm_channel;
+	notif_chain_comm_channel_t notif_chain_comm_channel;
+	
+	notif_chain_elem.notif_chain_comm_channel = 
+		&notif_chain_comm_channel;
 
-	notif_chain_comm_channel->notif_ch_type = NOTIF_C_AF_UNIX;
+	notif_chain_comm_channel.notif_ch_type = NOTIF_C_AF_UNIX;
 
-	strncpy(NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel),
+	strncpy(NOTIF_CHAIN_ELEM_SKT_NAME(&notif_chain_comm_channel),
 			subs_unix_skt_name, 
 			NOTIF_C_COMM_CHANNEL_UNIX_SKT_NAME_VALUE_LEN);
 
@@ -808,8 +887,9 @@ notif_chain_subscribe_by_unix_skt(
 			subs_tlv_buff,
 			subs_tlv_buff_size);
 
-	notif_chain_free_notif_chain_elem_internals(
-			&notif_chain_elem);
+    if(notif_chain_elem.data.app_key_data){
+        free(notif_chain_elem.data.app_key_data);
+    }
 
 	free(subs_tlv_buff);
 	subs_tlv_buff = NULL;
@@ -844,12 +924,14 @@ notif_chain_subscribe_msgq(
 		notif_chain_elem.data.app_key_data_size = key_size;
 	}
 
-	notif_chain_comm_channel_t *notif_chain_comm_channel = 
-		notif_chain_elem.notif_chain_comm_channel;
+	notif_chain_comm_channel_t notif_chain_comm_channel;
+	
+	notif_chain_elem.notif_chain_comm_channel = 
+		&notif_chain_comm_channel;
 
-	notif_chain_comm_channel->notif_ch_type = NOTIF_C_MSG_Q;
+	notif_chain_comm_channel.notif_ch_type = NOTIF_C_MSG_Q;
 
-	strncpy(NOTIF_CHAIN_ELEM_MSGQ_NAME(notif_chain_comm_channel),
+	strncpy(NOTIF_CHAIN_ELEM_MSGQ_NAME(&notif_chain_comm_channel),
 			subs_msgq_name,
 			NOTIF_C_COMM_CHANNEL_MSGQ_NAME_VALUE_LEN);
 
@@ -871,8 +953,9 @@ notif_chain_subscribe_msgq(
 			subs_tlv_buff,
 			subs_tlv_buff_size);
 
-	notif_chain_free_notif_chain_elem_internals(
-			&notif_chain_elem);
+    if(notif_chain_elem.data.app_key_data){
+        free(notif_chain_elem.data.app_key_data);
+    }
 
 	free(subs_tlv_buff);
 	subs_tlv_buff = NULL;
@@ -1231,20 +1314,120 @@ notif_chain_deserialize_notif_chain_elem(
 	return notif_chain_elem;
 }
 
+bool
+notif_chain_resurrect_communication_channel(
+		notif_chain_comm_channel_t *notif_chain_comm_channel){
+
+	return true;
+}
+
 notif_chain_comm_channel_t *
 notif_chain_record_comm_channel_per_client(
-		notif_chain_db_t *notif_chain_db,
 		uint32_t client_id,
 		notif_chain_comm_channel_t *notif_chain_comm_channel_template){
 
-	return NULL;
+	glthread_t *curr;
+	comm_channel_per_client_db_t *comm_channel_per_client_db_curr;
+
+	notif_chain_comm_channel_t *existing_comm_channel = 
+		notif_chain_lookup_matching_comm_channel_per_client(
+			client_id,
+			notif_chain_comm_channel_template);
+
+	if (existing_comm_channel) {
+
+		existing_comm_channel->ref_count++;
+		return existing_comm_channel;
+	}
+
+	notif_chain_comm_channel_t *new_comm_channel = 
+		notif_chain_comm_channel_template;
+
+	new_comm_channel->ref_count = 1;
+	init_glthread(&new_comm_channel->glue);
+
+	ITERATE_GLTHREAD_BEGIN(
+		&notif_chain_db.comm_channel_per_client_db_head,
+		curr){
+
+		comm_channel_per_client_db_curr = 
+			glthread_glue_to_comm_channel_per_client_db(curr);
+
+		if(comm_channel_per_client_db_curr->client_id != client_id){
+			continue;
+		}
+
+		glthread_add_next(
+			&comm_channel_per_client_db_curr->comm_channel_head,
+			&new_comm_channel->glue);
+		
+		return new_comm_channel;
+			
+	}ITERATE_GLTHREAD_END(
+		&notif_chain_db.comm_channel_per_client_db_head,
+		curr);
+
+	comm_channel_per_client_db_curr = calloc(1,
+			sizeof(comm_channel_per_client_db_t));
+
+	comm_channel_per_client_db_curr->client_id = client_id;
+	init_glthread(&comm_channel_per_client_db_curr->comm_channel_head);
+	init_glthread(&comm_channel_per_client_db_curr->glue);
+
+	glthread_add_next(&notif_chain_db.comm_channel_per_client_db_head,
+		&comm_channel_per_client_db_curr->glue);
+
+	glthread_add_next(
+		&comm_channel_per_client_db_curr->comm_channel_head,
+		&new_comm_channel->glue);
+	
+	notif_chain_resurrect_communication_channel(new_comm_channel);
+
+	return new_comm_channel;
 }
 
 notif_chain_comm_channel_t *
 notif_chain_lookup_matching_comm_channel_per_client(
-        notif_chain_db_t *notif_chain_db,
         uint32_t client_id,
         notif_chain_comm_channel_t *notif_chain_comm_channel_template){
+
+	glthread_t *curr1, *curr2;
+	notif_chain_comm_channel_t *notif_chain_comm_channel_curr;
+	comm_channel_per_client_db_t *comm_channel_per_client_db_curr;
+
+	ITERATE_GLTHREAD_BEGIN(
+		&notif_chain_db.comm_channel_per_client_db_head,
+		curr1){
+
+		comm_channel_per_client_db_curr = 
+			glthread_glue_to_comm_channel_per_client_db(curr1);
+		
+		if (comm_channel_per_client_db_curr->client_id != client_id){
+			continue;
+		}
+
+		ITERATE_GLTHREAD_BEGIN(
+			&comm_channel_per_client_db_curr->comm_channel_head,
+			curr2){
+		
+			notif_chain_comm_channel_curr = 
+				glthread_glue_to_notif_chain_comm_channel(curr2);
+
+			if (!notif_chain_communication_channel_match(
+					notif_chain_comm_channel_curr,
+					notif_chain_comm_channel_template)) {
+			 continue;
+			}
+
+			return notif_chain_comm_channel_curr;
+
+		} ITERATE_GLTHREAD_END(
+			&comm_channel_per_client_db_curr->comm_channel_head,
+			curr2);
+		
+	} ITERATE_GLTHREAD_END(
+		&notif_chain_db.comm_channel_per_client_db_head,
+		curr1);
 
 	return NULL;
 }
