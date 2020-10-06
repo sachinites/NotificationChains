@@ -39,11 +39,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include "network_utils.h"
 
 extern void
 create_subscriber_thread();
-
-void network_start_pkt_receiver_thread(void );
 
 static notif_chain_t notif_chain;
 
@@ -156,6 +155,20 @@ rt_entry_keys_print_fn(void *keys, uint32_t key_size,
     return output_buff;
 }
 
+void
+tcp_subscriber_join_notification(char *ip_addr,
+								 uint32_t tcp_port_no){
+
+	printf("%s() Called \n", __FUNCTION__);
+}
+
+void
+tcp_subscriber_killed_notification(char *ip_addr,
+								   uint32_t tcp_port_no){
+
+	printf("%s() Called \n", __FUNCTION__);
+}
+
 int
 main(int argc, char **argv){
 
@@ -171,19 +184,9 @@ main(int argc, char **argv){
         rt_entry_comp_fn,
         rt_entry_keys_print_fn);
 
-    /* Publisher needs to start the the separate thread so
-     * that it can listen to remote subscriber's request.
-     * Remote subscribers are those which runs as a separate process
-     * on same or remote machine*/
-
-    /* ToDO 
-     *
-     * Start a listener thread here
-     * 
-     * */
-
-    /* thread a client here. We will create one of the thread 
-     * as a subscriber to test notification chains using callbacks.
+    /* We will create a thread which will be act 
+     * as a subscriber to publisher to allow 
+     * test notification chains using callbacks.
      * Notif chains uses callbacks to notify the subscribers only
      * for local subscribers i.e. subscribers running as a thread
      * of publisher process*/
@@ -191,81 +194,29 @@ main(int argc, char **argv){
      create_subscriber_thread(2);
      create_subscriber_thread(3);
     
-	/*Start the publisher pkt receiever thread*/
-     network_start_pkt_receiver_thread();
+    /* Publisher needs to start the the separate thread so
+     * that it can listen to remote subscriber's request on UDP socket.
+     * Remote subscribers are those which runs as a separate process
+     * on same or remote machine*/
+     network_start_udp_pkt_receiver_thread(
+			"127.0.0.1",
+			2000,
+			notif_chain_process_remote_subscriber_request);	
+     
+    /* Publisher needs to start the the separate thread so
+     * that it can listen to remote subscriber's request on TCP socket.
+     * Remote subscribers are those which runs as a separate process
+     * on same or remote machine*/
+	 network_start_tcp_pkt_receiver_thread(
+			"127.0.0.1",
+			2002,
+			notif_chain_process_remote_subscriber_request,
+			tcp_subscriber_join_notification,
+			tcp_subscriber_killed_notification);	
 
     /* Start the publisher database
      * mgmt Operations*/
     main_menu(&rt);
     return 0;
-}
-
-#define MAX_PACKET_BUFFER_SIZE 1024
-
-static char recv_buffer[MAX_PACKET_BUFFER_SIZE];
-
-static void *
-_network_start_pkt_receiver_thread(void *arg){
-
-    int udp_sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP );
-
-    if(udp_sock_fd == -1){
-        printf("Socket Creation Failed\n");
-        return 0;   
-    }
-
-    struct sockaddr_in publisher_addr;
-    publisher_addr.sin_family      = AF_INET;
-    publisher_addr.sin_port        = 2000;
-    publisher_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(udp_sock_fd, (struct sockaddr *)&publisher_addr, 
-		sizeof(struct sockaddr)) == -1) {
-        printf("Error : socket bind failed\n");
-        return 0;
-    }
-
-    fd_set active_sock_fd_set,
-           backup_sock_fd_set;
-
-    FD_ZERO(&active_sock_fd_set);
-    FD_ZERO(&backup_sock_fd_set);
-
-    struct sockaddr_in subscriber_addr;
-    FD_SET(udp_sock_fd, &backup_sock_fd_set);
-    int bytes_recvd = 0,
-		addr_len = sizeof(subscriber_addr);
-	
-    while(1){
-
-        memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
-        select(udp_sock_fd + 1, &active_sock_fd_set, NULL, NULL, NULL);
-        
-		if(FD_ISSET(udp_sock_fd, &active_sock_fd_set)){
-
-            memset(recv_buffer, 0, MAX_PACKET_BUFFER_SIZE);
-            bytes_recvd = recvfrom(udp_sock_fd, (char *)recv_buffer,
-                    MAX_PACKET_BUFFER_SIZE, 0, (struct sockaddr *)&subscriber_addr, &addr_len);
-
-            notif_chain_process_remote_subscriber_request(
-                    recv_buffer, bytes_recvd);
-        }
-    }
-    return 0;
-}
-
-/*Pkt receiever thread*/
-void
-network_start_pkt_receiver_thread( void ){
-
-    pthread_attr_t attr;
-    pthread_t recv_pkt_thread;
-
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-    pthread_create(&recv_pkt_thread, &attr,
-            _network_start_pkt_receiver_thread,
-            0);
 }
 

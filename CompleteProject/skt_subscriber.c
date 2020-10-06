@@ -34,13 +34,12 @@
 #include <sys/types.h> /*for pid_t*/
 #include <unistd.h>    /*for getpid()*/
 #include <pthread.h>
-#include "notif.h"
-#include "rt.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
-
-void network_start_pkt_receiver_thread(void );
+#include "notif.h"
+#include "rt.h"
+#include "network_utils.h"
 
 void 
 main_menu(){
@@ -117,90 +116,27 @@ while(1) {
 	}
 }
 
+static void
+process_remote_msgs(char *recv_msg_buffer, 
+					uint32_t recv_msg_buffer_size,
+					char *sender_ip_addr,
+        			uint32_t sender_port_number,
+        			uint32_t sender_skt_fd,
+        			int fd_set_arr[]){
+
+
+}
+
 int
 main(int argc, char **argv){
 
 
     /*Start the pkt receiever thread*/
-    network_start_pkt_receiver_thread();
+	network_start_udp_pkt_receiver_thread(
+		"127.0.0.1",
+		2001,
+		process_remote_msgs);
     main_menu();
     return 0;
-}
-
-#define MAX_PACKET_BUFFER_SIZE 1024
-
-static char recv_buffer[MAX_PACKET_BUFFER_SIZE];
-
-static void
-process_remote_msgs(char *recv_msg_buffer, 
-					uint32_t recv_msg_buffer_size){
-
-
-}
-
-
-static void *
-_network_start_pkt_receiver_thread(void *arg){
-
-    int udp_sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP );
-
-    if(udp_sock_fd == -1){
-        printf("Socket Creation Failed\n");
-        return 0;   
-    }
-
-    struct sockaddr_in publisher_addr;
-    publisher_addr.sin_family      = AF_INET;
-    publisher_addr.sin_port        = 2001;
-    publisher_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(udp_sock_fd, (struct sockaddr *)&publisher_addr, 
-		sizeof(struct sockaddr)) == -1) {
-        printf("Error : socket bind failed\n");
-        return 0;
-    }
-
-    fd_set active_sock_fd_set,
-           backup_sock_fd_set;
-
-    FD_ZERO(&active_sock_fd_set);
-    FD_ZERO(&backup_sock_fd_set);
-
-    struct sockaddr_in subscriber_addr;
-    FD_SET(udp_sock_fd, &backup_sock_fd_set);
-    int bytes_recvd = 0,
-		addr_len = sizeof(subscriber_addr);
-	
-    while(1){
-
-        memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
-        select(udp_sock_fd + 1, &active_sock_fd_set, NULL, NULL, NULL);
-        
-		if(FD_ISSET(udp_sock_fd, &active_sock_fd_set)){
-
-            memset(recv_buffer, 0, MAX_PACKET_BUFFER_SIZE);
-            bytes_recvd = recvfrom(udp_sock_fd, (char *)recv_buffer,
-                    MAX_PACKET_BUFFER_SIZE, 0, (struct sockaddr *)&subscriber_addr, &addr_len);
-
-            process_remote_msgs(
-                    recv_buffer, bytes_recvd);
-        }
-    }
-    return 0;
-}
-
-/*Pkt receiever thread*/
-void
-network_start_pkt_receiver_thread( void ){
-
-    pthread_attr_t attr;
-    pthread_t recv_pkt_thread;
-
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-    pthread_create(&recv_pkt_thread, &attr,
-            _network_start_pkt_receiver_thread,
-            0);
 }
 

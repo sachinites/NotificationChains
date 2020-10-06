@@ -316,16 +316,14 @@ bool
 notif_chain_unsubscribe(char *notif_name, 
                       notif_chain_elem_t *notif_chain_elem);
 
-bool
+void
 notif_chain_process_remote_subscriber_request(
-                     char *subs_tlv_buffer,
-                     uint32_t subs_tlv_buffer_size);
-
-/* Subscription APIs to be used by Subscribers*/
-int
-notif_chain_send_msg_to_publisher(char *publisher_addr,
-                                  uint16_t publisher_port_no,
-                                  char *msg, uint32_t msg_size);
+        char *subs_tlv_buffer,
+        uint32_t subs_tlv_buffer_size,
+        char *subs_ip_addr,
+        uint32_t subs_port_number,
+        uint32_t subs_skt_fd,
+        int fd_set_arr[]);
 
 bool
 notif_chain_subscribe_by_callback(
@@ -370,7 +368,7 @@ notif_chain_subscribe_msgq(
 
 int
 notif_chain_send_msg_to_publisher(char *publisher_addr,
-                                  uint16_t publisher_port_no,
+                                  uint32_t publisher_port_no,
                                   char *msg,
                                   uint32_t msg_size);
 int

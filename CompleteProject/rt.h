@@ -41,7 +41,7 @@ typedef struct rt_entry_keys_{
 
 typedef struct rt_entry_{
 
-    /* A Structure which represnets only the keys of the
+    /* A Structure which represents only the keys of the
      * Routing Table.*/
     rt_entry_keys_t rt_entry_keys;
 

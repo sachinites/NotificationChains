@@ -40,6 +40,7 @@
 #include <netdb.h>  /*for struct hostent*/
 #include "notif.h"
 #include "utils.h"
+#include "network_utils.h"
 
 static notif_chain_db_t notif_chain_db = {{0,0}, {0,0}};
 
@@ -678,10 +679,14 @@ notif_chain_lookup_notif_chain_element(
 	return NULL;
 }
 
-bool
+void
 notif_chain_process_remote_subscriber_request(
 		char *subs_tlv_buffer, 
-		uint32_t subs_tlv_buffer_size){
+		uint32_t subs_tlv_buffer_size,
+		char *subs_ip_addr,
+		uint32_t subs_port_number,
+		uint32_t subs_skt_fd,
+		int fd_set_arr[]){
 
 	notif_ch_type_t notif_ch_type;
 	notif_ch_notify_opcode_t notif_code;
@@ -722,13 +727,12 @@ notif_chain_process_remote_subscriber_request(
 			break;
 		case NOTIF_C_UNKNOWN:
 		default:
-			return false;
+			return;
 	}
 	if(should_free) {
 		free(notif_chain_elem->notif_chain_comm_channel);
 		free(notif_chain_elem);
 	}
-	return true;
 }
 
 /* APIs to be used by client/subscribers to subscribe
@@ -972,35 +976,18 @@ notif_chain_subscribe_msgq(
  * Over Network UDP Sockets*/
 static int
 notif_chain_send_udp_msg(char *dest_ip_addr,
-		uint16_t dest_port_no,
+		uint32_t dest_port_no,
 		char *msg,
 		uint32_t msg_size){
 
-	struct sockaddr_in dest;
-
-	dest.sin_family = AF_INET;
-	dest.sin_port = dest_port_no;
-	struct hostent *host = (struct hostent *)gethostbyname(dest_ip_addr);
-	dest.sin_addr = *((struct in_addr *)host->h_addr);
-	int addr_len = sizeof(struct sockaddr);
-
-	int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-	if(sockfd == -1){
-		printf("socket creation failed, errno = %d\n", errno);
-		return 0;
-	}
-
-	int rc = sendto(sockfd, msg, msg_size,
-			0, (struct sockaddr *)&dest, 
-			sizeof(struct sockaddr));
-	close(sockfd);
-	return rc; 
+	return send_udp_msg(dest_ip_addr,
+			dest_port_no,
+			msg, msg_size);
 }
 
 int
 notif_chain_send_msg_to_publisher(char *publisher_addr,
-		uint16_t publisher_port_no,
+		uint32_t publisher_port_no,
 		char *msg,
 		uint32_t msg_size){
 
