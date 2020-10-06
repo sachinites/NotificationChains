@@ -82,6 +82,7 @@ notif_chain_init(notif_chain_t *notif_chain,
 	notif_chain->name[sizeof(notif_chain->name) -1] = '\0';
 	notif_chain->comp_cb = comp_cb;
 	notif_chain->print_cb = print_cb;
+	init_glthread(&notif_chain->notif_chain_elem_head);
 	init_glthread(&notif_chain->glue);
 	notif_chain_register_notif_chain(notif_chain);
 }
@@ -723,6 +724,10 @@ notif_chain_process_remote_subscriber_request(
 		default:
 			return false;
 	}
+	if(should_free) {
+		free(notif_chain_elem->notif_chain_comm_channel);
+		free(notif_chain_elem);
+	}
 	return true;
 }
 
@@ -770,7 +775,8 @@ notif_chain_subscribe_by_inet_skt(
 		uint16_t subs_port_no,
 		uint16_t protocol_no,
 		char *publisher_addr,
-		uint16_t publisher_port_no){
+		uint16_t publisher_port_no,
+		notif_ch_notify_opcode_t op_code){
 
 
 	char *subs_tlv_buff = NULL;
@@ -779,7 +785,7 @@ notif_chain_subscribe_by_inet_skt(
 
 	memset(&notif_chain_elem, 0, sizeof(notif_chain_elem_t));
 	notif_chain_elem.client_id = client_id;
-	notif_chain_elem.notif_code = SUBS_TO_PUB_NOTIF_C_SUBSCRIBE;
+	notif_chain_elem.notif_code = op_code;
 
 	/* For wild card subscription, key can be NULL */
 	if(key && key_size){

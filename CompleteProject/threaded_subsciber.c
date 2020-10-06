@@ -13,7 +13,7 @@
  *         Author:  Er. Abhishek Sagar, Juniper Networks (https://csepracticals.wixsite.com/csepracticals), sachinites@gmail.com
  *        Company:  Juniper Networks
  *
- *        This file is part of the XXX distribution (https://github.com/sachinites) 
+ *        This file is part of the NotificationChains distribution (https://github.com/sachinites) 
  *        Copyright (c) 2019 Abhishek Sagar.
  *        This program is free software: you can redistribute it and/or modify it under the terms of the GNU General 
  *        Public License as published by the Free Software Foundation, version 3.

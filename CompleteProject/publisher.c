@@ -47,10 +47,11 @@ void network_start_pkt_receiver_thread(void );
 
 static notif_chain_t notif_chain;
 
+static int choice;
+
 void 
 main_menu(rt_table_t *rt){
 
-    int choice;
 
     /*Add some default entries in routing table*/
     rt_add_new_rt_entry(rt, "122.1.1.1", 32, "10.1.1.1", "eth0");

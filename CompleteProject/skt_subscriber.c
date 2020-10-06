@@ -47,6 +47,8 @@ main_menu(){
 
    	rt_entry_keys_t rt_entry_keys;
 
+while(1) {
+
     strncpy(rt_entry_keys.dest, "122.1.1.3", 16);
     rt_entry_keys.mask = 32;
 
@@ -60,7 +62,8 @@ main_menu(){
 		2001,
 		NOTIF_CHAIN_PROTO,
 		"127.0.0.1",
-		2000);
+		2000,
+		SUBS_TO_PUB_NOTIF_C_SUBSCRIBE);
 
     strncpy(rt_entry_keys.dest, "122.1.1.4", 16);
     rt_entry_keys.mask = 32;
@@ -74,9 +77,44 @@ main_menu(){
 		2001,
 		NOTIF_CHAIN_PROTO,
 		"127.0.0.1",
-		2000);
+		2000,
+		SUBS_TO_PUB_NOTIF_C_SUBSCRIBE);
 
-	pause();	
+	sleep(5);
+
+    strncpy(rt_entry_keys.dest, "122.1.1.3", 16);
+    rt_entry_keys.mask = 32;
+
+	/* Register for some sample entries */
+	notif_chain_subscribe_by_inet_skt(
+		"notif_chain_rt_table",
+		&rt_entry_keys,
+		sizeof(rt_entry_keys_t),
+		getpid(),
+		"127.0.0.1",
+		2001,
+		NOTIF_CHAIN_PROTO,
+		"127.0.0.1",
+		2000,
+		SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE);
+
+    strncpy(rt_entry_keys.dest, "122.1.1.4", 16);
+    rt_entry_keys.mask = 32;
+	
+	notif_chain_subscribe_by_inet_skt(
+		"notif_chain_rt_table",
+		&rt_entry_keys,
+		sizeof(rt_entry_keys_t),
+		getpid(),
+		"127.0.0.1",
+		2001,
+		NOTIF_CHAIN_PROTO,
+		"127.0.0.1",
+		2000,
+		SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE);	
+
+		sleep(5);
+	}
 }
 
 int

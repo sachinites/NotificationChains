@@ -345,7 +345,8 @@ notif_chain_subscribe_by_inet_skt(
         uint16_t subs_port_no,
         uint16_t protocol_no,
         char *publisher_addr,
-        uint16_t publisher_port_no);
+        uint16_t publisher_port_no,
+		notif_ch_notify_opcode_t op_code);
 
 bool
 notif_chain_subscribe_by_unix_skt(
