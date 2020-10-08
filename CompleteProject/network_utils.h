@@ -165,6 +165,11 @@ tcp_delete_tcp_server_client_entry_by_ipaddr_port(
 	uint32_t tcp_port_no);
 
 void
+tcp_shutdown_tcp_server(
+    char *server_ip_addr,
+    uint32_t tcp_port_no);
+
+void
 tcp_dump_tcp_connection_db(
 		tcp_connections_db_t *tcp_connections_db);
 

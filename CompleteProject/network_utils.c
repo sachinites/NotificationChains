@@ -68,7 +68,8 @@ _network_start_udp_pkt_receiver_thread(void *arg){
 	thread_arg_pkg_t *thread_arg_pkg = 
 		(thread_arg_pkg_t *)arg;
 
-	char *ip_addr 	   = thread_arg_pkg->ip_addr;
+	char ip_addr[16];
+	strncpy(ip_addr, thread_arg_pkg->ip_addr, 16);
 	uint32_t port_no   = thread_arg_pkg->port_no;
 	recv_fn_cb recv_fn = thread_arg_pkg->recv_fn;
 	
@@ -277,7 +278,8 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 	thread_arg_pkg_t *thread_arg_pkg = 
 		(thread_arg_pkg_t *)arg;
 
-	char *ip_addr 	   = thread_arg_pkg->ip_addr;
+	char ip_addr[16];
+	strncpy(ip_addr, thread_arg_pkg->ip_addr, 16);
 	uint32_t port_no   = thread_arg_pkg->port_no;
 	recv_fn_cb recv_fn = thread_arg_pkg->recv_fn;
 	tcp_connect_cb tcp_connect_fn = thread_arg_pkg->tcp_connect_fn;
@@ -286,30 +288,9 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 	free(thread_arg_pkg);
 	thread_arg_pkg = NULL;
 
-	#ifdef TCP_DB_MGMT
-		tcp_server_t *tcp_server = calloc(1, sizeof(tcp_server_t));
-		strncpy(tcp_server->ip_addr, ip_addr, 16);
-		tcp_server->port_no = port_no;
-		tcp_server->recv_fn = recv_fn;
-		tcp_server->tcp_disconnect_fn = tcp_disconnect_fn;
-		tcp_server->tcp_connect_fn = tcp_connect_fn;
-	    monitored_tcp_fd_set_array = tcp_server->monitored_tcp_fd_set_array;
-		init_glthread(&tcp_server->clients_list_head);
-		init_glthread(&tcp_server->glue);
-		pthread_mutex_lock(&tcp_db_mgmt_mutex);
-		tcp_server_add_to_db(tcp_connections_db, tcp_server);
-		pthread_mutex_unlock(&tcp_db_mgmt_mutex);
-	#else
-		monitored_tcp_fd_set_array = calloc(MAX_CLIENT_TCP_CONNECTION_SUPPORTED,
-											 sizeof(int));	
-	#endif
-
-	intitialize_monitored_fd_set(monitored_tcp_fd_set_array,
-								 MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-	
 	int tcp_master_sock_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP );
 	int tcp_dummy_master_sock_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP );
-
+	
 	if(tcp_master_sock_fd == -1 || 
 		tcp_dummy_master_sock_fd == -1){
 		printf("Socket Creation Failed\n");
@@ -371,6 +352,29 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		goto CLEANUP;
 	}
 	
+	#ifdef TCP_DB_MGMT
+		tcp_server_t *tcp_server = calloc(1, sizeof(tcp_server_t));
+		tcp_server->master_sock_fd = tcp_master_sock_fd;
+		tcp_server->dummy_master_sock_fd = tcp_dummy_master_sock_fd;
+		strncpy(tcp_server->ip_addr, ip_addr, 16);
+		tcp_server->port_no = port_no;
+		tcp_server->recv_fn = recv_fn;
+		tcp_server->tcp_disconnect_fn = tcp_disconnect_fn;
+		tcp_server->tcp_connect_fn = tcp_connect_fn;
+	    monitored_tcp_fd_set_array = tcp_server->monitored_tcp_fd_set_array;
+		init_glthread(&tcp_server->clients_list_head);
+		init_glthread(&tcp_server->glue);
+		pthread_mutex_lock(&tcp_db_mgmt_mutex);
+		tcp_server_add_to_db(tcp_connections_db, tcp_server);
+		pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+	#else
+		monitored_tcp_fd_set_array = calloc(MAX_CLIENT_TCP_CONNECTION_SUPPORTED,
+											 sizeof(int));	
+	#endif
+
+	intitialize_monitored_fd_set(monitored_tcp_fd_set_array,
+								 MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+	
 	add_to_monitored_tcp_fd_set(tcp_master_sock_fd,
 								monitored_tcp_fd_set_array,
 								MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
@@ -398,10 +402,22 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
     struct sockaddr_in client_addr;
     int bytes_recvd = 0,
        	addr_len = sizeof(client_addr);
+	
+	fd_set zero_fd_set;
+	memset(&zero_fd_set, 0, sizeof(fd_set));
+	FD_SET(tcp_dummy_master_sock_fd, &zero_fd_set);
 
     while(1){
 
         memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
+
+		/* Stop the thread if no FDs to monitor, including Master FDs */
+		if(memcmp(&active_sock_fd_set, &zero_fd_set, sizeof(fd_set)) == 0){
+			printf("TCP Server [%s %u] Thread Terminating\n", 
+				tcp_server->ip_addr, tcp_server->port_no);
+			break;
+		}
+
         select(
 			get_max_fd (monitored_tcp_fd_set_array,
 					    MAX_CLIENT_TCP_CONNECTION_SUPPORTED) + 1,
@@ -417,6 +433,8 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 				continue;
 			}
 
+
+			pthread_mutex_lock(&tcp_db_mgmt_mutex);
 		    add_to_monitored_tcp_fd_set(comm_socket_fd,
 										monitored_tcp_fd_set_array,
 										MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
@@ -425,32 +443,32 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 						  monitored_tcp_fd_set_array,
 						  MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
 
-			#ifdef TCP_DB_MGMT
 
 			tcp_connected_client_t *tcp_connected_client = 
 					calloc(1, sizeof(tcp_connected_client_t));
 
 			tcp_create_new_tcp_connection_client_entry(
 					comm_socket_fd,
-					network_covert_ip_n_to_p((uint32_t)client_addr.sin_addr.s_addr, 0), 
+					network_covert_ip_n_to_p((uint32_t)htonl(client_addr.sin_addr.s_addr), 0), 
 					client_addr.sin_port, tcp_connected_client);
 			
-			pthread_mutex_lock(&tcp_db_mgmt_mutex);
+			#ifdef TCP_DB_MGMT
 			tcp_save_tcp_server_client_entry(
 				tcp_connections_db,
 				tcp_master_sock_fd,
 				tcp_connected_client);
 			pthread_mutex_unlock(&tcp_db_mgmt_mutex);
-
 			#endif
 
 			if(tcp_connect_fn) tcp_connect_fn( 0, 0);
         }
 		else if(FD_ISSET(tcp_dummy_master_sock_fd, &active_sock_fd_set)){
 			
+			pthread_mutex_lock(&tcp_db_mgmt_mutex);
 			fd_set_skt_fd(&backup_sock_fd_set,
 						  monitored_tcp_fd_set_array,
 						  MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+			pthread_mutex_unlock(&tcp_db_mgmt_mutex);
 		}
 		else {
 			int i = 0;
@@ -476,6 +494,8 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
  					 * or abruptly terminated for other reasons such as Ctrl-C */			
 					if(bytes_recvd == 0) {
 						
+						#ifdef TCP_DB_MGMT
+						pthread_mutex_lock(&tcp_db_mgmt_mutex);
 						remove_from_monitored_tcp_fd_set(comm_socket_fd,
 											monitored_tcp_fd_set_array,
 											MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
@@ -486,16 +506,13 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
 						if(tcp_disconnect_fn) tcp_disconnect_fn(0, 0);
 						
-						#ifdef TCP_DB_MGMT
-							pthread_mutex_lock(&tcp_db_mgmt_mutex);
-							tcp_connected_client_t *tcp_connected_client = 
-								tcp_lookup_tcp_server_client_entry_by_comm_fd(
+						tcp_connected_client_t *tcp_connected_client = 
+							tcp_lookup_tcp_server_client_entry_by_comm_fd(
 									tcp_connections_db, comm_socket_fd);
-							assert(tcp_connected_client);
-							tcp_delete_tcp_server_client_entry(tcp_connected_client);		
-							pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+						assert(tcp_connected_client);
+						tcp_delete_tcp_server_client_entry(tcp_connected_client);		
+						pthread_mutex_unlock(&tcp_db_mgmt_mutex);
 						#endif
-
 					} 
 					else {
 						recv_fn(recv_buffer, bytes_recvd, 0, 0, 0, 0);					
@@ -684,7 +701,7 @@ tcp_force_disconnect_client_by_comm_fd(
 				sizeof(tcp_server->monitored_tcp_fd_set_array[0]))>= 0));
 
 	tcp_fake_connect(tcp_server->ip_addr, tcp_server->port_no + 1);
-	
+    close(comm_fd);	
 	tcp_delete_tcp_server_client_entry(tcp_connected_client);
 }
 
@@ -747,18 +764,29 @@ static void
 print_tcp_connected_client(
 		tcp_connected_client_t *tcp_connected_client){
 
-	printf("\tClient : [%s %u]\n", tcp_connected_client->client_ip_addr,
-								   tcp_connected_client->client_tcp_port_no);
+	printf("\tClient : [%s %u %d]\n",
+			tcp_connected_client->client_ip_addr,
+			tcp_connected_client->client_tcp_port_no,
+			tcp_connected_client->client_comm_fd);
 }
 
 static void
 print_tcp_server_info(tcp_server_t *tcp_server){
 
+	int i = 0;
 	glthread_t *curr;
 	tcp_connected_client_t *tcp_connected_client;
 
 	printf("TCP Server : [%s %u]\n", tcp_server->ip_addr, tcp_server->port_no);
-
+	printf("  Monitored FDs :"); 
+	for(i = 0; i < MAX_CLIENT_TCP_CONNECTION_SUPPORTED; i++){
+		if(tcp_server->monitored_tcp_fd_set_array[i] == -1) continue;
+		printf("%s%d ", 
+			(tcp_server->monitored_tcp_fd_set_array[i] == tcp_server->master_sock_fd ||
+			(tcp_server->monitored_tcp_fd_set_array[i] == tcp_server->dummy_master_sock_fd)) ? "*" : "",
+			tcp_server->monitored_tcp_fd_set_array[i]);
+	}
+	printf("\n");
 	ITERATE_GLTHREAD_BEGIN(&tcp_server->clients_list_head, curr){
 
 		tcp_connected_client = glue_to_tcp_connected_client(curr);
@@ -806,6 +834,90 @@ tcp_server_add_to_db(
 					  &tcp_server->glue);
 }
 
+static void
+check_and_delete_tcp_Server(tcp_server_t *tcp_server){
+
+	int i = 0;
+	for( ; i < MAX_CLIENT_TCP_CONNECTION_SUPPORTED; i++){
+		assert(tcp_server->monitored_tcp_fd_set_array[i] == -1);
+	}
+
+	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->clients_list_head));
+	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->glue));
+	printf("TCP Server [%s %u] Deleted\n",
+		tcp_server->ip_addr, tcp_server->port_no);
+	free(tcp_server);
+}
+
+void
+tcp_shutdown_tcp_server(
+	char *server_ip_addr,
+	uint32_t tcp_port_no) {
+
+	glthread_t *curr;
+	tcp_connected_client_t *tcp_connected_client;
+
+	pthread_mutex_lock(&tcp_db_mgmt_mutex);
+	tcp_server_t *tcp_server = 
+		tcp_lookup_tcp_server_entry_by_ipaddr_port(
+			tcp_connections_db, server_ip_addr, tcp_port_no);
+
+	if(!tcp_server) return;
+
+	/* close all client connections */
+	ITERATE_GLTHREAD_BEGIN(&tcp_server->clients_list_head, curr){
+
+		tcp_connected_client = glue_to_tcp_connected_client(curr);
+		tcp_force_disconnect_client_by_comm_fd(
+				tcp_connections_db,
+				tcp_connected_client->client_comm_fd);
+	} ITERATE_GLTHREAD_END(&tcp_server->clients_list_head, curr);
+
+    remove_from_monitored_tcp_fd_set(
+			tcp_server->master_sock_fd,
+			tcp_server->monitored_tcp_fd_set_array,
+			MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+
+	close(tcp_server->master_sock_fd);
+	tcp_server->master_sock_fd = 0;
+
+	/* Stop the Server thread */
+    tcp_fake_connect(server_ip_addr, tcp_port_no + 1);
+	
+    remove_from_monitored_tcp_fd_set(
+			tcp_server->dummy_master_sock_fd,
+			tcp_server->monitored_tcp_fd_set_array,
+			MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+	
+	close(tcp_server->dummy_master_sock_fd);
+	tcp_server->dummy_master_sock_fd = 0;
+	tcp_remove_tcp_server_entry(tcp_server);
+	pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+
+	/* Sanity Checks before deletion */
+	check_and_delete_tcp_Server(tcp_server);
+}
+
+tcp_server_t *
+tcp_lookup_tcp_server_entry_by_ipaddr_port(
+    tcp_connections_db_t *tcp_connections_db,
+    char *ip_addr,
+    uint32_t port_no){
+
+	glthread_t *curr;
+	tcp_server_t *tcp_server;
+
+	ITERATE_GLTHREAD_BEGIN(&tcp_connections_db->tcp_server_list_head, curr){
+	
+		tcp_server = glue_to_tcp_server(curr);
+		if(strncmp(tcp_server->ip_addr, ip_addr, 16) == 0 && 
+			tcp_server->port_no == port_no) {
+		
+			return tcp_server;	
+		}
+	} ITERATE_GLTHREAD_END(&tcp_connections_db->tcp_server_list_head, curr);	
+	return NULL;
+}
 
 #endif
 
