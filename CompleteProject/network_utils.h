@@ -99,26 +99,28 @@ GLTHREAD_TO_STRUCT(glue_to_tcp_connected_client,
 typedef struct tcp_connections_{
 
 	glthread_t tcp_server_list_head;
+	pthread_mutex_t tcp_db_mutex;
 } tcp_connections_db_t;
+
+void tcp_db_lock(void);
+void tcp_db_unlock(void);
 
 void
 tcp_remove_tcp_server_entry(
-	tcp_server_t *tcp_server);
+	tcp_server_t *tcp_server,
+	bool tcp_db_already_locked);
 
 void
 tcp_server_add_to_db(
 	tcp_connections_db_t *tcp_connections_db,
-	tcp_server_t *tcp_server);
-
-void
-tcp_delete_tcp_server_entry(
-	tcp_connections_db_t *tcp_connections_db,
-	tcp_server_t *tcp_server);
+	tcp_server_t *tcp_server,
+	bool tcp_db_already_locked);
 
 tcp_server_t *
 tcp_lookup_tcp_server_entry_by_master_fd(
 	tcp_connections_db_t *tcp_connections_db,
-	uint32_t master_fd);
+	uint32_t master_fd,
+	bool tcp_db_already_locked);
 
 void
 tcp_create_new_tcp_connection_client_entry(
@@ -131,7 +133,8 @@ tcp_server_t *
 tcp_lookup_tcp_server_entry_by_ipaddr_port(
 	tcp_connections_db_t *tcp_connections_db,
 	char *ip_addr,
-	uint32_t port_no);
+	uint32_t port_no,
+	bool tcp_db_already_locked);
 
 void
 tcp_server_pause(tcp_server_t *tcp_server);
@@ -142,43 +145,50 @@ tcp_server_resume(tcp_server_t *tcp_server);
 tcp_connected_client_t *
 tcp_lookup_tcp_server_client_entry_by_comm_fd(
 	tcp_connections_db_t *tcp_connections_db,
-	uint32_t comm_fd);
+	uint32_t comm_fd,
+	bool tcp_db_already_locked);
 
 tcp_connected_client_t *
 tcp_lookup_tcp_server_client_entry_by_ipaddr_port(
 	tcp_connections_db_t *tcp_connections_db,
 	char *ip_addr,
-	uint32_t port_no);
+	uint32_t port_no,
+	bool tcp_db_already_locked);
 
 void
 tcp_save_tcp_server_client_entry(
 	tcp_connections_db_t *tcp_connections_db,
 	uint32_t tcp_server_master_sock_fd,
-	tcp_connected_client_t *tcp_connected_client);
+	tcp_connected_client_t *tcp_connected_client,
+	bool tcp_db_already_locked);
 
 void
 tcp_delete_tcp_server_client_entry(
-	tcp_connected_client_t *tcp_connected_client);
+	tcp_connected_client_t *tcp_connected_client,
+	bool tcp_db_already_locked);
 
 void
 tcp_delete_tcp_server_client_entry_by_comm_fd(
-	tcp_connections_db_t *tcp_connections_db,
-	uint32_t comm_fd);
+	uint32_t comm_fd,
+	bool tcp_db_already_locked);
 
 void
 tcp_delete_tcp_server_client_entry_by_ipaddr_port(
 	tcp_connections_db_t *tcp_connections_db,
 	char *ip_addr,
-	uint32_t tcp_port_no);
+	uint32_t tcp_port_no,
+	bool tcp_db_already_locked);
 
 void
 tcp_shutdown_tcp_server(
     char *server_ip_addr,
-    uint32_t tcp_port_no);
+    uint32_t tcp_port_no,
+	bool tcp_db_already_locked);
 
 void
 tcp_dump_tcp_connection_db(
-		tcp_connections_db_t *tcp_connections_db);
+		tcp_connections_db_t *tcp_connections_db,
+		bool tcp_db_already_locked);
 
 /* End : Working with TCP Connected Clients */
 
@@ -222,12 +232,14 @@ tcp_send_msg(int tcp_comm_fd,
 void
 tcp_force_disconnect_client_by_ip_addr_port(
 		char *ip_addr,
-		uint32_t tcp_port_no);
+		uint32_t tcp_port_no,
+		bool tcp_db_already_locked);
 
 void
 tcp_force_disconnect_client_by_comm_fd(
 		tcp_connections_db_t *tcp_connections_db,
-		uint32_t comm_fd);
+		uint32_t comm_fd,
+		bool tcp_db_already_locked);
 
 void
 init_network_skt_lib(tcp_connections_db_t 

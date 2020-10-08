@@ -121,7 +121,7 @@ main_menu(rt_table_t *rt){
                notif_chain_dump(&notif_chain);
                break;
 			case 6:
-				tcp_dump_tcp_connection_db(&tcp_connections_db);
+				tcp_dump_tcp_connection_db(&tcp_connections_db, false);
 				break;
 			case 7:
 				{
@@ -129,7 +129,7 @@ main_menu(rt_table_t *rt){
 					printf("Enter client comm fd : ");
 					scanf("%u", &client_comm_fd);
 					tcp_force_disconnect_client_by_comm_fd(
-						&tcp_connections_db, client_comm_fd);
+						&tcp_connections_db, client_comm_fd, false);
 					break;
 				}
 			case 8:
@@ -137,7 +137,7 @@ main_menu(rt_table_t *rt){
 					uint32_t tcp_port_no;
 					printf("Enter TCP Server port NO : ");
 					scanf("%u", &tcp_port_no);
-					tcp_shutdown_tcp_server("127.0.0.1", tcp_port_no);
+					tcp_shutdown_tcp_server("127.0.0.1", tcp_port_no, false);
 					break;	
 				}
             default:
@@ -247,6 +247,27 @@ main(int argc, char **argv){
 	network_start_tcp_pkt_receiver_thread(
 			"127.0.0.1",
 			2006,
+			notif_chain_process_remote_subscriber_request,
+			tcp_subscriber_join_notification,
+			tcp_subscriber_killed_notification);	
+
+	 network_start_tcp_pkt_receiver_thread(
+			"127.0.0.1",
+			2008,
+			notif_chain_process_remote_subscriber_request,
+			tcp_subscriber_join_notification,
+			tcp_subscriber_killed_notification);	
+
+	 network_start_tcp_pkt_receiver_thread(
+			"127.0.0.1",
+			2010,
+			notif_chain_process_remote_subscriber_request,
+			tcp_subscriber_join_notification,
+			tcp_subscriber_killed_notification);	
+	 
+	network_start_tcp_pkt_receiver_thread(
+			"127.0.0.1",
+			2012,
 			notif_chain_process_remote_subscriber_request,
 			tcp_subscriber_join_notification,
 			tcp_subscriber_killed_notification);	

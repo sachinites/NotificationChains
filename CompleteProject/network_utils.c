@@ -18,17 +18,24 @@
 
 #include "network_utils.h"
 
-#define TCP_DB_MGMT
-
-#ifdef TCP_DB_MGMT
-static pthread_mutex_t tcp_db_mgmt_mutex;
-#endif
-
 /* 
  * Library holds the pointer to application instantiated
  * tcp_connections_db 
  * */
 static tcp_connections_db_t *tcp_connections_db = NULL;
+
+#define INSERT_LOCK_MGMT_CODE			\
+	if(!tcp_db_already_locked) {		\
+		tcp_db_lock();					\
+		tcp_db_already_locked = true;	\
+		lock_modified = true;			\
+	}
+
+#define INSERT_UNLOCK_MGMT_CODE						\
+	if(lock_modified && tcp_db_already_locked) {	\
+		tcp_db_unlock();							\
+		tcp_db_already_locked = false;				\
+	}
 
 void
 init_network_skt_lib(tcp_connections_db_t 
@@ -36,7 +43,7 @@ init_network_skt_lib(tcp_connections_db_t
 
 	static bool initialized = false;
 	
-	if(initialized) return;
+	if(initialized) assert(0);
 
 	initialized = true;
 
@@ -44,9 +51,7 @@ init_network_skt_lib(tcp_connections_db_t
 
 	init_glthread(&tcp_connections_db->tcp_server_list_head);
 
-	#ifdef TCP_DB_MGMT
-	pthread_mutex_init(&tcp_db_mgmt_mutex, NULL);
-	#endif
+	pthread_mutex_init(&tcp_connections_db->tcp_db_mutex, NULL);
 }
 
 
@@ -269,7 +274,7 @@ fd_set_skt_fd(fd_set *_fd_set,
 /* End : Monitored Socket FD Array operations */
 
 static void
-check_and_delete_tcp_Server(tcp_server_t *tcp_server){
+tcp_Server_ensure_all_resources_released(tcp_server_t *tcp_server){
 
 	int i = 0;
 	for( ; i < MAX_CLIENT_TCP_CONNECTION_SUPPORTED; i++){
@@ -291,15 +296,15 @@ tcp_server_cleanup_handler(void *arg){
 	tcp_connected_client_t *tcp_connected_client;
 
 	tcp_server_t *tcp_server = (tcp_server_t *)arg;
-	
-	pthread_mutex_lock(&tcp_db_mgmt_mutex);
+
+	tcp_db_lock();	
 
 	/* close all client connections */
 	ITERATE_GLTHREAD_BEGIN(&tcp_server->clients_list_head, curr){
 
 		tcp_connected_client = glue_to_tcp_connected_client(curr);
 		close(tcp_connected_client->client_tcp_port_no);
-		tcp_delete_tcp_server_client_entry(tcp_connected_client);
+		tcp_delete_tcp_server_client_entry(tcp_connected_client, true);
 	} ITERATE_GLTHREAD_END(&tcp_server->clients_list_head, curr);
 	
     close(tcp_server->master_sock_fd);
@@ -314,8 +319,8 @@ tcp_server_cleanup_handler(void *arg){
 	free(tcp_server->tcp_server_thread);
 	tcp_server->tcp_server_thread = NULL;
 
-	tcp_remove_tcp_server_entry(tcp_server);		
-    pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+	tcp_remove_tcp_server_entry(tcp_server, true);
+	tcp_db_unlock();
 }
 
 
@@ -406,28 +411,23 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		goto CLEANUP;
 	}
 	
-	#ifdef TCP_DB_MGMT
-		tcp_server_t *tcp_server = calloc(1, sizeof(tcp_server_t));
-		tcp_server->master_sock_fd = tcp_master_sock_fd;
-		tcp_server->dummy_master_sock_fd = tcp_dummy_master_sock_fd;
-		strncpy(tcp_server->ip_addr, ip_addr, 16);
-		tcp_server->port_no = port_no;
-		tcp_server->recv_fn = recv_fn;
-		tcp_server->tcp_disconnect_fn = tcp_disconnect_fn;
-		tcp_server->tcp_connect_fn = tcp_connect_fn;
-	    monitored_tcp_fd_set_array = tcp_server->monitored_tcp_fd_set_array;
-		tcp_server->tcp_server_thread = thread;
-		init_glthread(&tcp_server->clients_list_head);
-		init_glthread(&tcp_server->glue);
-		pthread_mutex_init(&tcp_server->tcp_server_pause_mutex, NULL);
-		pthread_mutex_lock(&tcp_db_mgmt_mutex);
-		tcp_server_add_to_db(tcp_connections_db, tcp_server);
-		pthread_mutex_unlock(&tcp_db_mgmt_mutex);
-		pthread_cleanup_push(tcp_server_cleanup_handler, (void *)tcp_server);
-	#else
-		monitored_tcp_fd_set_array = calloc(MAX_CLIENT_TCP_CONNECTION_SUPPORTED,
-											 sizeof(int));	
-	#endif
+	tcp_server_t *tcp_server = calloc(1, sizeof(tcp_server_t));
+	tcp_server->master_sock_fd = tcp_master_sock_fd;
+	tcp_server->dummy_master_sock_fd = tcp_dummy_master_sock_fd;
+	strncpy(tcp_server->ip_addr, ip_addr, 16);
+	tcp_server->port_no = port_no;
+	tcp_server->recv_fn = recv_fn;
+	tcp_server->tcp_disconnect_fn = tcp_disconnect_fn;
+	tcp_server->tcp_connect_fn = tcp_connect_fn;
+	monitored_tcp_fd_set_array = tcp_server->monitored_tcp_fd_set_array;
+	tcp_server->tcp_server_thread = thread;
+	init_glthread(&tcp_server->clients_list_head);
+	init_glthread(&tcp_server->glue);
+	pthread_mutex_init(&tcp_server->tcp_server_pause_mutex, NULL);
+	tcp_db_lock();
+	tcp_server_add_to_db(tcp_connections_db, tcp_server, true);
+	tcp_db_unlock();
+	pthread_cleanup_push(tcp_server_cleanup_handler, (void *)tcp_server);
 
 	intitialize_monitored_fd_set(monitored_tcp_fd_set_array,
 								 MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
@@ -440,10 +440,8 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 								monitored_tcp_fd_set_array,
 								MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
 
-	#ifdef TCP_DB_MGMT
-		tcp_server->master_sock_fd = tcp_master_sock_fd;
-		tcp_server->dummy_master_sock_fd = tcp_dummy_master_sock_fd;
-	#endif
+	tcp_server->master_sock_fd = tcp_master_sock_fd;
+	tcp_server->dummy_master_sock_fd = tcp_dummy_master_sock_fd;
 
 	char *recv_buffer = calloc(1, MAX_PACKET_BUFFER_SIZE);
 
@@ -498,7 +496,6 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 			}
 
 
-			pthread_mutex_lock(&tcp_db_mgmt_mutex);
 		    add_to_monitored_tcp_fd_set(comm_socket_fd,
 										monitored_tcp_fd_set_array,
 										MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
@@ -511,13 +508,12 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 					network_covert_ip_n_to_p((uint32_t)htonl(client_addr.sin_addr.s_addr), 0), 
 					client_addr.sin_port, tcp_connected_client);
 			
-			#ifdef TCP_DB_MGMT
+			tcp_db_lock();	
 			tcp_save_tcp_server_client_entry(
 				tcp_connections_db,
 				tcp_master_sock_fd,
-				tcp_connected_client);
-			pthread_mutex_unlock(&tcp_db_mgmt_mutex);
-			#endif
+				tcp_connected_client, true);
+			tcp_db_unlock();
 
 			if(tcp_connect_fn) tcp_connect_fn( 0, 0);
         }
@@ -548,28 +544,28 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
  					 * or abruptly terminated for other reasons such as Ctrl-C */			
 					if(bytes_recvd == 0) {
 						
-						#ifdef TCP_DB_MGMT
-						pthread_mutex_lock(&tcp_db_mgmt_mutex);
 						remove_from_monitored_tcp_fd_set(comm_socket_fd,
 											monitored_tcp_fd_set_array,
 											MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
 						
 						if(tcp_disconnect_fn) tcp_disconnect_fn(0, 0);
 						
+						tcp_db_lock();
+		
 						tcp_connected_client_t *tcp_connected_client = 
 							tcp_lookup_tcp_server_client_entry_by_comm_fd(
-									tcp_connections_db, comm_socket_fd);
+									tcp_connections_db, comm_socket_fd, true);
 						//assert(tcp_connected_client);
 						if(!tcp_connected_client) {
-							pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+							tcp_db_unlock();
 							continue;
 						}
-						tcp_delete_tcp_server_client_entry(tcp_connected_client);		
-						pthread_mutex_unlock(&tcp_db_mgmt_mutex);
-						#endif
+						tcp_delete_tcp_server_client_entry(
+							tcp_connected_client, false);		
+						tcp_db_unlock();
 					} 
 					else {
-						recv_fn(recv_buffer, bytes_recvd, 0, 0, 0, 0);					
+						recv_fn(recv_buffer, bytes_recvd, 0, 0, 0, 0);	
 					}
 				}
 			}
@@ -577,13 +573,11 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		tcp_server_resume(tcp_server);
     }
 	CLEANUP:
-	#ifdef TCP_DB_MGMT
-	 	pthread_mutex_lock(&tcp_db_mgmt_mutex);
+		tcp_db_lock();
 		tcp_server_cleanup_handler((void *)tcp_server);
-		tcp_remove_tcp_server_entry(tcp_server);
-		pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+		tcp_remove_tcp_server_entry(tcp_server, true);
+		tcp_db_unlock();
 		free(tcp_server);	
-	#endif
 	pthread_cleanup_pop(0);
     return 0;
 }
@@ -699,26 +693,46 @@ tcp_disconnect(int comm_sock_fd,
 void
 tcp_server_pause(tcp_server_t *tcp_server){
 
-	pthread_mutex_lock(&tcp_server->tcp_server_pause_mutex);
+	pthread_mutex_lock(
+		&tcp_server->tcp_server_pause_mutex);
 }
 
 void
 tcp_server_resume(tcp_server_t *tcp_server){
 
-	pthread_mutex_unlock(&tcp_server->tcp_server_pause_mutex);
+	pthread_mutex_unlock(
+		&tcp_server->tcp_server_pause_mutex);
 }
 
 
-#ifdef TCP_DB_MGMT
+/* TCP DB mgmt functions */
+
+void tcp_db_lock(){
+
+	pthread_mutex_lock(
+			&tcp_connections_db->tcp_db_mutex);
+}
+
+void tcp_db_unlock(){
+
+	pthread_mutex_unlock(
+			&tcp_connections_db->tcp_db_mutex);
+}
 
 tcp_connected_client_t *
 tcp_lookup_tcp_server_client_entry_by_comm_fd(
 	tcp_connections_db_t *tcp_connections_db,
-	uint32_t comm_fd){
+	uint32_t comm_fd,
+	bool tcp_db_already_locked){
 
 	glthread_t *curr, *curr2;
 	tcp_server_t *tcp_server_curr;
+	
+	bool lock_modified = false;
+	
 	tcp_connected_client_t *tcp_connected_client_curr;
+
+	INSERT_LOCK_MGMT_CODE;
 
 	ITERATE_GLTHREAD_BEGIN(&tcp_connections_db->tcp_server_list_head, curr){
 
@@ -730,19 +744,30 @@ tcp_lookup_tcp_server_client_entry_by_comm_fd(
 
 			if(tcp_connected_client_curr->client_comm_fd == comm_fd) {
 				
+				INSERT_UNLOCK_MGMT_CODE;
 				return tcp_connected_client_curr;
 			}
-		}ITERATE_GLTHREAD_END(&tcp_server_curr->clients_list_head, curr2);				
+		}ITERATE_GLTHREAD_END(&tcp_server_curr->clients_list_head, curr2);
 
 	} ITERATE_GLTHREAD_END(&tcp_connections_db->tcp_server_list_head, curr);
+
+	INSERT_UNLOCK_MGMT_CODE;
 	return NULL;
 }
 
 void
 tcp_delete_tcp_server_client_entry(
-	tcp_connected_client_t *tcp_connected_client){
+	tcp_connected_client_t *tcp_connected_client,
+	bool tcp_db_already_locked){
 
+	bool lock_modified = false;
+
+	INSERT_LOCK_MGMT_CODE;
+	
 	remove_glthread(&tcp_connected_client->glue);
+
+	INSERT_UNLOCK_MGMT_CODE;
+
 	tcp_connected_client->tcp_server = NULL;
 	free(tcp_connected_client);
 }
@@ -751,11 +776,19 @@ tcp_delete_tcp_server_client_entry(
 void
 tcp_force_disconnect_client_by_comm_fd(
 	tcp_connections_db_t *tcp_connections_db,
-	uint32_t comm_fd){
+	uint32_t comm_fd,
+	bool tcp_db_already_locked){
+
+	bool lock_modified = false;
+
+	INSERT_LOCK_MGMT_CODE;
 
 	tcp_connected_client_t * tcp_connected_client = 
 		tcp_lookup_tcp_server_client_entry_by_comm_fd(
-			tcp_connections_db, comm_fd);
+			tcp_connections_db, comm_fd,
+			tcp_db_already_locked);
+
+	INSERT_UNLOCK_MGMT_CODE;
 
 	if ( !tcp_connected_client) return;
 
@@ -763,16 +796,61 @@ tcp_force_disconnect_client_by_comm_fd(
 	
 	assert(tcp_server);
 
+	tcp_server_pause(tcp_server);
 	assert((remove_from_monitored_tcp_fd_set(
 			tcp_connected_client->client_comm_fd,
 			tcp_server->monitored_tcp_fd_set_array,
 			sizeof(tcp_server->monitored_tcp_fd_set_array)/\
 				sizeof(tcp_server->monitored_tcp_fd_set_array[0]))>= 0));
+	tcp_server_resume(tcp_server);
 
 	tcp_fake_connect(tcp_server->ip_addr, tcp_server->port_no + 1);
-    close(comm_fd);	
-	tcp_delete_tcp_server_client_entry(tcp_connected_client);
+    close(comm_fd);
+
+	INSERT_LOCK_MGMT_CODE;
+
+	tcp_delete_tcp_server_client_entry(
+		tcp_connected_client, tcp_db_already_locked);
+
+	INSERT_UNLOCK_MGMT_CODE;
 }
+
+void
+tcp_delete_tcp_server_client_entry_by_comm_fd(
+    uint32_t comm_fd,
+	bool tcp_db_already_locked){
+
+	glthread_t *curr, *curr2;
+	tcp_server_t *tcp_server;
+	bool lock_modified = false;
+	tcp_connected_client_t *tcp_connected_client;
+
+	INSERT_LOCK_MGMT_CODE;
+
+	ITERATE_GLTHREAD_BEGIN(&tcp_connections_db->tcp_server_list_head, curr){
+
+		tcp_server = glue_to_tcp_server(curr);
+		
+		ITERATE_GLTHREAD_BEGIN(&tcp_server->clients_list_head, curr2){
+
+			tcp_connected_client = glue_to_tcp_connected_client(curr2);
+
+			if(tcp_connected_client->client_comm_fd == comm_fd) {
+
+				tcp_force_disconnect_client_by_comm_fd(
+					tcp_connections_db, comm_fd,
+					tcp_db_already_locked);
+
+				INSERT_UNLOCK_MGMT_CODE;
+				return;			
+			}
+		} ITERATE_GLTHREAD_END(&tcp_server->clients_list_head, curr2);
+
+	} ITERATE_GLTHREAD_END(&tcp_connections_db->tcp_server_list_head, curr);	
+
+	INSERT_UNLOCK_MGMT_CODE;
+}
+
 
 void
 tcp_create_new_tcp_connection_client_entry(
@@ -793,11 +871,19 @@ void
 tcp_save_tcp_server_client_entry(
     tcp_connections_db_t *tcp_connections_db,
     uint32_t tcp_server_master_sock_fd,
-    tcp_connected_client_t *tcp_connected_client){
+    tcp_connected_client_t *tcp_connected_client,
+	bool tcp_db_already_locked){
+
+	bool lock_modified = false; 
+
+	INSERT_LOCK_MGMT_CODE;
 
 	tcp_server_t *tcp_server = tcp_lookup_tcp_server_entry_by_master_fd(
 								tcp_connections_db,
-						        tcp_server_master_sock_fd);
+						        tcp_server_master_sock_fd,
+								tcp_db_already_locked);
+
+	INSERT_UNLOCK_MGMT_CODE;
 
 	assert(tcp_server);
 
@@ -807,31 +893,45 @@ tcp_save_tcp_server_client_entry(
 
 	init_glthread(&tcp_connected_client->glue);
 
-	glthread_add_next(&tcp_server->clients_list_head, &tcp_connected_client->glue);
+	INSERT_LOCK_MGMT_CODE;
+
+	glthread_add_next(&tcp_server->clients_list_head,
+		&tcp_connected_client->glue);
+
+	INSERT_UNLOCK_MGMT_CODE;
 }
 
 tcp_server_t *
 tcp_lookup_tcp_server_entry_by_master_fd(
     tcp_connections_db_t *tcp_connections_db,
-    uint32_t master_fd){
+    uint32_t master_fd,
+	bool tcp_db_already_locked){
 
 	glthread_t *curr;
+	bool lock_modified = false;
 	tcp_server_t *tcp_server_curr;
+
+	INSERT_LOCK_MGMT_CODE;
 
 	ITERATE_GLTHREAD_BEGIN(&tcp_connections_db->tcp_server_list_head, curr){
 
 		tcp_server_curr = glue_to_tcp_server(curr);
 
-		if(tcp_server_curr->master_sock_fd == master_fd)
+		if(tcp_server_curr->master_sock_fd == master_fd){
+
+			INSERT_UNLOCK_MGMT_CODE;			
 			return tcp_server_curr;
+		}
 
 	} ITERATE_GLTHREAD_END(&tcp_connections_db->tcp_server_list_head, curr);
+
+	INSERT_UNLOCK_MGMT_CODE;
 	return NULL;
 }
 
 static void
 print_tcp_connected_client(
-		tcp_connected_client_t *tcp_connected_client){
+	tcp_connected_client_t *tcp_connected_client){
 
 	printf("\tClient : [%s %u %d]\n",
 			tcp_connected_client->client_ip_addr,
@@ -866,12 +966,15 @@ print_tcp_server_info(tcp_server_t *tcp_server){
 
 void
 tcp_dump_tcp_connection_db(
-        tcp_connections_db_t *tcp_connections_db){
-
+        tcp_connections_db_t *tcp_connections_db,
+		bool tcp_db_already_locked){
 
 	glthread_t *curr;
+	bool lock_modified = false;	
 	tcp_server_t *tcp_server_curr;
 
+	INSERT_LOCK_MGMT_CODE;
+	
 	ITERATE_GLTHREAD_BEGIN(&tcp_connections_db->tcp_server_list_head, curr){
 
 		tcp_server_curr = glue_to_tcp_server(curr);
@@ -879,46 +982,77 @@ tcp_dump_tcp_connection_db(
 		print_tcp_server_info(tcp_server_curr);
 
 	} ITERATE_GLTHREAD_END(&tcp_connections_db->tcp_server_list_head, curr);
+
+	INSERT_UNLOCK_MGMT_CODE;
 }
 
 void
 tcp_remove_tcp_server_entry(
-    tcp_server_t *tcp_server){
+    tcp_server_t *tcp_server,
+	bool tcp_db_already_locked){
 
+	bool lock_modified = false;
+
+	INSERT_LOCK_MGMT_CODE;
+	
 	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->clients_list_head));	
 	remove_glthread(&tcp_server->glue);
+
+	INSERT_UNLOCK_MGMT_CODE;
 }
 
 void
 tcp_server_add_to_db(
     tcp_connections_db_t *tcp_connections_db,
-    tcp_server_t *tcp_server) {
+    tcp_server_t *tcp_server,
+	bool tcp_db_already_locked) {
 
+	bool lock_modified = false;
+
+	INSERT_LOCK_MGMT_CODE;	
 	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->glue));
 
 	assert(!tcp_lookup_tcp_server_entry_by_master_fd(
-				tcp_connections_db, tcp_server->master_sock_fd));
+				tcp_connections_db, tcp_server->master_sock_fd,
+				tcp_db_already_locked));
 
 	glthread_add_next(&tcp_connections_db->tcp_server_list_head,
 					  &tcp_server->glue);
+
+	INSERT_UNLOCK_MGMT_CODE;
+}
+
+tcp_connected_client_t *
+tcp_lookup_tcp_server_client_entry_by_ipaddr_port(
+    tcp_connections_db_t *tcp_connections_db,
+    char *ip_addr,
+    uint32_t port_no,
+	bool tcp_db_already_locked){
+
+	bool lock_modified = false;
+	
+	return NULL;
 }
 
 void
 tcp_shutdown_tcp_server(
 	char *server_ip_addr,
-	uint32_t tcp_port_no) {
+	uint32_t tcp_port_no,
+	bool tcp_db_already_locked) {
 
 	glthread_t *curr;
+	bool lock_modified = false;
 	pthread_t tcp_server_thread_clone;
 	tcp_connected_client_t *tcp_connected_client;
 
-	pthread_mutex_lock(&tcp_db_mgmt_mutex);
+	INSERT_LOCK_MGMT_CODE;
 	
 	tcp_server_t *tcp_server = 
 		tcp_lookup_tcp_server_entry_by_ipaddr_port(
-			tcp_connections_db, server_ip_addr, tcp_port_no);
-	
-	pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+			tcp_connections_db, server_ip_addr, tcp_port_no,
+			tcp_db_already_locked);
+
+	INSERT_UNLOCK_MGMT_CODE;
 	
 	if(!tcp_server) return;
 
@@ -935,8 +1069,8 @@ tcp_shutdown_tcp_server(
 
 	tcp_server_resume(tcp_server);
 
-	check_and_delete_tcp_Server(tcp_server);	
-
+	tcp_Server_ensure_all_resources_released(tcp_server);	
+	free(tcp_server);
 	printf("Server shut down complete\n");
 
 }
@@ -945,24 +1079,29 @@ tcp_server_t *
 tcp_lookup_tcp_server_entry_by_ipaddr_port(
     tcp_connections_db_t *tcp_connections_db,
     char *ip_addr,
-    uint32_t port_no){
+    uint32_t port_no,
+	bool tcp_db_already_locked){
 
 	glthread_t *curr;
 	tcp_server_t *tcp_server;
+	bool lock_modified = false;
 
+	INSERT_LOCK_MGMT_CODE;
+	
 	ITERATE_GLTHREAD_BEGIN(&tcp_connections_db->tcp_server_list_head, curr){
 	
 		tcp_server = glue_to_tcp_server(curr);
 		if(strncmp(tcp_server->ip_addr, ip_addr, 16) == 0 && 
 			tcp_server->port_no == port_no) {
-		
+			
+			if(!tcp_db_already_locked) tcp_db_unlock();
 			return tcp_server;	
 		}
 	} ITERATE_GLTHREAD_END(&tcp_connections_db->tcp_server_list_head, curr);	
+
+	INSERT_UNLOCK_MGMT_CODE;
 	return NULL;
 }
-
-#endif
 
 char *
 network_covert_ip_n_to_p(uint32_t ip_addr,
