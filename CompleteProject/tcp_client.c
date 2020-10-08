@@ -4,11 +4,23 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <memory.h>
-#include "common.h"
 #include <unistd.h>
 
 #define DEST_PORT            2006
 #define SERVER_IP_ADDRESS   "127.0.0.1"
+
+typedef struct _test_struct{
+
+    unsigned int a;
+    unsigned int b;
+} test_struct_t;
+
+
+typedef struct result_struct_{
+
+    unsigned int c;
+
+} result_struct_t;
 
 test_struct_t client_data;
 result_struct_t result;

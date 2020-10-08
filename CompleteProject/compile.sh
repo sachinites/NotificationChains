@@ -1,5 +1,7 @@
 rm *o
 rm *exe
+gcc -g -c tcp_client.c -o tcp_client.o
+gcc -g tcp_client.o -o tcp_client.exe
 gcc -g -c gluethread/glthread.c -o gluethread/glthread.o
 gcc -g -c rt.c -o rt.o
 gcc -g -c notif.c -o notif.o

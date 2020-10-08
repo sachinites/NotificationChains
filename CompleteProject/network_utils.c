@@ -57,6 +57,7 @@ typedef struct thread_arg_pkg_{
 	recv_fn_cb recv_fn;
 	tcp_connect_cb tcp_connect_fn;
 	tcp_disconnect_cb tcp_disconnect_fn;
+	pthread_t *thread;
 } thread_arg_pkg_t;
 
 
@@ -267,6 +268,55 @@ fd_set_skt_fd(fd_set *_fd_set,
 
 /* End : Monitored Socket FD Array operations */
 
+static void
+check_and_delete_tcp_Server(tcp_server_t *tcp_server){
+
+	int i = 0;
+	for( ; i < MAX_CLIENT_TCP_CONNECTION_SUPPORTED; i++){
+		assert(tcp_server->monitored_tcp_fd_set_array[i] == -1);
+	}
+
+	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->clients_list_head));
+	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->glue));
+	assert(tcp_server->tcp_server_thread == NULL);
+
+	printf("TCP Server [%s %u] Deleted\n",
+		tcp_server->ip_addr, tcp_server->port_no);
+}
+
+static void
+tcp_server_cleanup_handler(void *arg){
+
+	glthread_t *curr;
+	tcp_connected_client_t *tcp_connected_client;
+
+	tcp_server_t *tcp_server = (tcp_server_t *)arg;
+	
+	pthread_mutex_lock(&tcp_db_mgmt_mutex);
+
+	/* close all client connections */
+	ITERATE_GLTHREAD_BEGIN(&tcp_server->clients_list_head, curr){
+
+		tcp_connected_client = glue_to_tcp_connected_client(curr);
+		close(tcp_connected_client->client_tcp_port_no);
+		tcp_delete_tcp_server_client_entry(tcp_connected_client);
+	} ITERATE_GLTHREAD_END(&tcp_server->clients_list_head, curr);
+	
+    close(tcp_server->master_sock_fd);
+	tcp_server->master_sock_fd = 0;
+
+	close(tcp_server->dummy_master_sock_fd);
+	tcp_server->dummy_master_sock_fd = 0;
+
+	intitialize_monitored_fd_set(tcp_server->monitored_tcp_fd_set_array,
+		MAX_CLIENT_TCP_CONNECTION_SUPPORTED);	
+
+	free(tcp_server->tcp_server_thread);
+	tcp_server->tcp_server_thread = NULL;
+
+	tcp_remove_tcp_server_entry(tcp_server);		
+    pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+}
 
 
 static void *
@@ -274,6 +324,9 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
 	int opt = 1;
 	int *monitored_tcp_fd_set_array;
+
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
 	thread_arg_pkg_t *thread_arg_pkg = 
 		(thread_arg_pkg_t *)arg;
@@ -284,6 +337,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 	recv_fn_cb recv_fn = thread_arg_pkg->recv_fn;
 	tcp_connect_cb tcp_connect_fn = thread_arg_pkg->tcp_connect_fn;
     tcp_disconnect_cb tcp_disconnect_fn = thread_arg_pkg->tcp_disconnect_fn;
+	pthread_t *thread = thread_arg_pkg->thread;
 	
 	free(thread_arg_pkg);
 	thread_arg_pkg = NULL;
@@ -362,11 +416,14 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		tcp_server->tcp_disconnect_fn = tcp_disconnect_fn;
 		tcp_server->tcp_connect_fn = tcp_connect_fn;
 	    monitored_tcp_fd_set_array = tcp_server->monitored_tcp_fd_set_array;
+		tcp_server->tcp_server_thread = thread;
 		init_glthread(&tcp_server->clients_list_head);
 		init_glthread(&tcp_server->glue);
+		pthread_mutex_init(&tcp_server->tcp_server_pause_mutex, NULL);
 		pthread_mutex_lock(&tcp_db_mgmt_mutex);
 		tcp_server_add_to_db(tcp_connections_db, tcp_server);
 		pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+		pthread_cleanup_push(tcp_server_cleanup_handler, (void *)tcp_server);
 	#else
 		monitored_tcp_fd_set_array = calloc(MAX_CLIENT_TCP_CONNECTION_SUPPORTED,
 											 sizeof(int));	
@@ -396,9 +453,6 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
     FD_ZERO(&active_sock_fd_set);
     FD_ZERO(&backup_sock_fd_set);
 
-    FD_SET(tcp_master_sock_fd, &backup_sock_fd_set);
-    FD_SET(tcp_dummy_master_sock_fd, &backup_sock_fd_set);
-
     struct sockaddr_in client_addr;
     int bytes_recvd = 0,
        	addr_len = sizeof(client_addr);
@@ -408,6 +462,10 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 	FD_SET(tcp_dummy_master_sock_fd, &zero_fd_set);
 
     while(1){
+
+		fd_set_skt_fd(&backup_sock_fd_set,
+				monitored_tcp_fd_set_array,
+				MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
 
         memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
 
@@ -423,6 +481,11 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 					    MAX_CLIENT_TCP_CONNECTION_SUPPORTED) + 1,
 			&active_sock_fd_set, NULL, NULL, NULL);
 
+		/* Check with the kernel if the cancel signal is receieved */
+		pthread_testcancel();
+
+		tcp_server_pause(tcp_server);
+
         if(FD_ISSET(tcp_master_sock_fd, &active_sock_fd_set)){
 
 			/* Connection initiation Request */
@@ -430,6 +493,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 				 					     (struct sockaddr *)&client_addr,
 					   					 &addr_len);
 			if(comm_socket_fd < 0 ){
+				tcp_server_resume(tcp_server);
 				continue;
 			}
 
@@ -438,11 +502,6 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		    add_to_monitored_tcp_fd_set(comm_socket_fd,
 										monitored_tcp_fd_set_array,
 										MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-
-			fd_set_skt_fd(&backup_sock_fd_set,
-						  monitored_tcp_fd_set_array,
-						  MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-
 
 			tcp_connected_client_t *tcp_connected_client = 
 					calloc(1, sizeof(tcp_connected_client_t));
@@ -463,12 +522,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 			if(tcp_connect_fn) tcp_connect_fn( 0, 0);
         }
 		else if(FD_ISSET(tcp_dummy_master_sock_fd, &active_sock_fd_set)){
-			
-			pthread_mutex_lock(&tcp_db_mgmt_mutex);
-			fd_set_skt_fd(&backup_sock_fd_set,
-						  monitored_tcp_fd_set_array,
-						  MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-			pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+			/* No need to do anything */	
 		}
 		else {
 			int i = 0;
@@ -500,16 +554,16 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 											monitored_tcp_fd_set_array,
 											MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
 						
-						fd_set_skt_fd(&backup_sock_fd_set,
-						  monitored_tcp_fd_set_array,
-						  MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-
 						if(tcp_disconnect_fn) tcp_disconnect_fn(0, 0);
 						
 						tcp_connected_client_t *tcp_connected_client = 
 							tcp_lookup_tcp_server_client_entry_by_comm_fd(
 									tcp_connections_db, comm_socket_fd);
-						assert(tcp_connected_client);
+						//assert(tcp_connected_client);
+						if(!tcp_connected_client) {
+							pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+							continue;
+						}
 						tcp_delete_tcp_server_client_entry(tcp_connected_client);		
 						pthread_mutex_unlock(&tcp_db_mgmt_mutex);
 						#endif
@@ -520,14 +574,17 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 				}
 			}
 		}
+		tcp_server_resume(tcp_server);
     }
 	CLEANUP:
 	#ifdef TCP_DB_MGMT
 	 	pthread_mutex_lock(&tcp_db_mgmt_mutex);
+		tcp_server_cleanup_handler((void *)tcp_server);
 		tcp_remove_tcp_server_entry(tcp_server);
 		pthread_mutex_unlock(&tcp_db_mgmt_mutex);
 		free(tcp_server);	
 	#endif
+	pthread_cleanup_pop(0);
     return 0;
 }
 
@@ -541,11 +598,11 @@ network_start_tcp_pkt_receiver_thread(
 	    tcp_disconnect_cb tcp_disconnect_fn) {
 
     pthread_attr_t attr;
-    pthread_t recv_pkt_thread;
+    pthread_t *recv_pkt_thread;
 	thread_arg_pkg_t *thread_arg_pkg;
 
     pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
 	thread_arg_pkg = calloc(1, sizeof(thread_arg_pkg_t));
 	strncpy(thread_arg_pkg->ip_addr, ip_addr, 16);
@@ -553,8 +610,8 @@ network_start_tcp_pkt_receiver_thread(
 	thread_arg_pkg->recv_fn = recv_fn;
 	thread_arg_pkg->tcp_connect_fn = tcp_connect_fn;
 	thread_arg_pkg->tcp_disconnect_fn = tcp_disconnect_fn;
-
-    pthread_create(&recv_pkt_thread, &attr,
+	thread_arg_pkg->thread = calloc(1, sizeof(pthread_t));
+    pthread_create(thread_arg_pkg->thread, &attr,
 			_network_start_tcp_pkt_receiver_thread,
             (void *)thread_arg_pkg);
 }
@@ -637,6 +694,18 @@ tcp_disconnect(int comm_sock_fd,
 	}
 
 	close(comm_sock_fd);
+}
+
+void
+tcp_server_pause(tcp_server_t *tcp_server){
+
+	pthread_mutex_lock(&tcp_server->tcp_server_pause_mutex);
+}
+
+void
+tcp_server_resume(tcp_server_t *tcp_server){
+
+	pthread_mutex_unlock(&tcp_server->tcp_server_pause_mutex);
 }
 
 
@@ -834,68 +903,42 @@ tcp_server_add_to_db(
 					  &tcp_server->glue);
 }
 
-static void
-check_and_delete_tcp_Server(tcp_server_t *tcp_server){
-
-	int i = 0;
-	for( ; i < MAX_CLIENT_TCP_CONNECTION_SUPPORTED; i++){
-		assert(tcp_server->monitored_tcp_fd_set_array[i] == -1);
-	}
-
-	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->clients_list_head));
-	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->glue));
-	printf("TCP Server [%s %u] Deleted\n",
-		tcp_server->ip_addr, tcp_server->port_no);
-	free(tcp_server);
-}
-
 void
 tcp_shutdown_tcp_server(
 	char *server_ip_addr,
 	uint32_t tcp_port_no) {
 
 	glthread_t *curr;
+	pthread_t tcp_server_thread_clone;
 	tcp_connected_client_t *tcp_connected_client;
 
 	pthread_mutex_lock(&tcp_db_mgmt_mutex);
+	
 	tcp_server_t *tcp_server = 
 		tcp_lookup_tcp_server_entry_by_ipaddr_port(
 			tcp_connections_db, server_ip_addr, tcp_port_no);
-
+	
+	pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+	
 	if(!tcp_server) return;
 
-	/* close all client connections */
-	ITERATE_GLTHREAD_BEGIN(&tcp_server->clients_list_head, curr){
+	tcp_server_thread_clone = *tcp_server->tcp_server_thread;
 
-		tcp_connected_client = glue_to_tcp_connected_client(curr);
-		tcp_force_disconnect_client_by_comm_fd(
-				tcp_connections_db,
-				tcp_connected_client->client_comm_fd);
-	} ITERATE_GLTHREAD_END(&tcp_server->clients_list_head, curr);
+	tcp_server_pause(tcp_server);	
 
-    remove_from_monitored_tcp_fd_set(
-			tcp_server->master_sock_fd,
-			tcp_server->monitored_tcp_fd_set_array,
-			MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-
-	close(tcp_server->master_sock_fd);
-	tcp_server->master_sock_fd = 0;
-
-	/* Stop the Server thread */
-    tcp_fake_connect(server_ip_addr, tcp_port_no + 1);
+	printf("Server Thread cancellation request sent...\n");	
+	pthread_cancel(tcp_server_thread_clone);
 	
-    remove_from_monitored_tcp_fd_set(
-			tcp_server->dummy_master_sock_fd,
-			tcp_server->monitored_tcp_fd_set_array,
-			MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-	
-	close(tcp_server->dummy_master_sock_fd);
-	tcp_server->dummy_master_sock_fd = 0;
-	tcp_remove_tcp_server_entry(tcp_server);
-	pthread_mutex_unlock(&tcp_db_mgmt_mutex);
+	/* Wait for the server thread to join us */
+	printf("Server thread Cancelled, Resources Cleaned up\n");
+	pthread_join(tcp_server_thread_clone, 0);
 
-	/* Sanity Checks before deletion */
-	check_and_delete_tcp_Server(tcp_server);
+	tcp_server_resume(tcp_server);
+
+	check_and_delete_tcp_Server(tcp_server);	
+
+	printf("Server shut down complete\n");
+
 }
 
 tcp_server_t *

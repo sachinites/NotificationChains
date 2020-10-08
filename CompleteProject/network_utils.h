@@ -71,7 +71,8 @@ typedef struct tcp_server_{
 	tcp_connect_cb tcp_connect_fn;
     int monitored_tcp_fd_set_array
 		[MAX_CLIENT_TCP_CONNECTION_SUPPORTED];
-
+	pthread_t *tcp_server_thread;
+	pthread_mutex_t tcp_server_pause_mutex;
 	/* 	Other properties below
 		< other tcp server properties >
 	*/
@@ -131,6 +132,12 @@ tcp_lookup_tcp_server_entry_by_ipaddr_port(
 	tcp_connections_db_t *tcp_connections_db,
 	char *ip_addr,
 	uint32_t port_no);
+
+void
+tcp_server_pause(tcp_server_t *tcp_server);
+
+void
+tcp_server_resume(tcp_server_t *tcp_server);
 
 tcp_connected_client_t *
 tcp_lookup_tcp_server_client_entry_by_comm_fd(
