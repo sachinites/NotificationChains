@@ -59,10 +59,12 @@ typedef struct thread_arg_pkg_{
 
 	char ip_addr[16];
 	uint32_t port_no;
+	uint32_t comm_fd;
 	recv_fn_cb recv_fn;
 	tcp_connect_cb tcp_connect_fn;
 	tcp_disconnect_cb tcp_disconnect_fn;
 	pthread_t *thread;
+	char *recv_buffer;
 } thread_arg_pkg_t;
 
 
@@ -113,7 +115,7 @@ _network_start_udp_pkt_receiver_thread(void *arg){
 	char *recv_buffer = calloc(1, MAX_PACKET_BUFFER_SIZE);
 
 	fd_set active_sock_fd_set,
-    backup_sock_fd_set;
+    	   backup_sock_fd_set;
 
     FD_ZERO(&active_sock_fd_set);
     FD_ZERO(&backup_sock_fd_set);
@@ -135,7 +137,10 @@ _network_start_udp_pkt_receiver_thread(void *arg){
                     MAX_PACKET_BUFFER_SIZE, 0, 
 					(struct sockaddr *)&client_addr, &addr_len);
 
-            recv_fn(recv_buffer, bytes_recvd, 0, 0, 0, 0);
+            recv_fn(recv_buffer, bytes_recvd, 
+					network_covert_ip_n_to_p(
+						(uint32_t)htonl(client_addr.sin_addr.s_addr), 0),
+						client_addr.sin_port, udp_sock_fd);
         }
     }
     return 0;
@@ -171,7 +176,8 @@ int
 send_udp_msg(char *dest_ip_addr,
              uint32_t dest_port_no,
              char *msg,
-             uint32_t msg_size) {
+             uint32_t msg_size,
+			 int sock_fd) {
     
 	struct sockaddr_in dest;
 
@@ -181,18 +187,19 @@ send_udp_msg(char *dest_ip_addr,
     dest.sin_addr = *((struct in_addr *)host->h_addr);
     int addr_len = sizeof(struct sockaddr);
 
-    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if(sock_fd < 0){
+		
+		sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
-    if(sockfd == -1){
-        printf("socket creation failed, errno = %d\n", errno);
-        return 0;
-    }
-
-    int rc = sendto(sockfd, msg, msg_size,
+		if(sock_fd < 0){
+			printf("socket creation failed, errno = %d\n", errno);
+			return -1;
+		}
+	}
+    sendto(sock_fd, msg, msg_size,
             0, (struct sockaddr *)&dest,
             sizeof(struct sockaddr));
-    close(sockfd);
-    return rc;
+    return sock_fd;
 }
 
 
@@ -285,7 +292,7 @@ tcp_Server_ensure_all_resources_released(tcp_server_t *tcp_server){
 	assert(IS_GLTHREAD_LIST_EMPTY(&tcp_server->glue));
 	assert(tcp_server->tcp_server_thread == NULL);
 
-	printf("TCP Server [%s %u] Deleted\n",
+	printf("TCP Server [%s %u] All resources released\n",
 		tcp_server->ip_addr, tcp_server->port_no);
 }
 
@@ -303,8 +310,15 @@ tcp_server_cleanup_handler(void *arg){
 	ITERATE_GLTHREAD_BEGIN(&tcp_server->clients_list_head, curr){
 
 		tcp_connected_client = glue_to_tcp_connected_client(curr);
+
 		close(tcp_connected_client->client_tcp_port_no);
+
+		tcp_server->tcp_disconnect_fn(
+			tcp_connected_client->client_ip_addr,
+			tcp_connected_client->client_tcp_port_no);
+
 		tcp_delete_tcp_server_client_entry(tcp_connected_client, true);
+
 	} ITERATE_GLTHREAD_END(&tcp_server->clients_list_head, curr);
 	
     close(tcp_server->master_sock_fd);
@@ -505,7 +519,8 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
 			tcp_create_new_tcp_connection_client_entry(
 					comm_socket_fd,
-					network_covert_ip_n_to_p((uint32_t)htonl(client_addr.sin_addr.s_addr), 0), 
+					network_covert_ip_n_to_p(
+						(uint32_t)htonl(client_addr.sin_addr.s_addr), 0), 
 					client_addr.sin_port, tcp_connected_client);
 			
 			tcp_db_lock();	
@@ -554,7 +569,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		
 						tcp_connected_client_t *tcp_connected_client = 
 							tcp_lookup_tcp_server_client_entry_by_comm_fd(
-									tcp_connections_db, comm_socket_fd, true);
+									comm_socket_fd, false);
 						//assert(tcp_connected_client);
 						if(!tcp_connected_client) {
 							tcp_db_unlock();
@@ -565,7 +580,16 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 						tcp_db_unlock();
 					} 
 					else {
-						recv_fn(recv_buffer, bytes_recvd, 0, 0, 0, 0);	
+						tcp_connected_client_t *tcp_connected_client = 
+							tcp_lookup_tcp_server_client_entry_by_comm_fd(
+								comm_socket_fd, false);
+						
+						if(!tcp_connected_client) continue;
+						
+						recv_fn(recv_buffer, bytes_recvd,
+								tcp_connected_client->client_ip_addr,
+								tcp_connected_client->client_tcp_port_no,
+								comm_socket_fd);	
 					}
 				}
 			}
@@ -610,13 +634,91 @@ network_start_tcp_pkt_receiver_thread(
             (void *)thread_arg_pkg);
 }
 
+static void
+network_listener_thread_cleaner(void *arg){
+
+	thread_arg_pkg_t *thread_arg_pkg = (thread_arg_pkg_t *)arg;
+	assert(thread_arg_pkg->recv_buffer);
+	free(thread_arg_pkg->recv_buffer);
+	close(thread_arg_pkg->comm_fd);
+}
+
+static void *
+_network_comm_fd_listening_fn(void *arg){
+
+
+	thread_arg_pkg_t *thread_arg_pkg = (thread_arg_pkg_t *)arg;
+
+	int comm_fd = thread_arg_pkg->comm_fd;
+
+	recv_fn_cb recv_fn = thread_arg_pkg->recv_fn;
+
+	char *recv_buffer = calloc(1, MAX_PACKET_BUFFER_SIZE);
+
+	thread_arg_pkg->recv_buffer = recv_buffer;
+ 
+	pthread_cleanup_push(network_listener_thread_cleaner,  (void *)thread_arg_pkg);
+
+	struct sockaddr_in client_addr;
+	int bytes_recvd = 0,
+		addr_len = sizeof(client_addr);
+
+	while(1){
+		memset(recv_buffer, 0, MAX_PACKET_BUFFER_SIZE);
+		bytes_recvd = recvfrom(comm_fd,	recv_buffer, 
+								MAX_PACKET_BUFFER_SIZE,
+								0, (struct sockaddr *)&client_addr, &addr_len);		
+	
+		recv_fn(recv_buffer, bytes_recvd, 0, 0, comm_fd);	
+	}
+	pthread_cleanup_pop(0);
+	return NULL;		
+}
+
+pthread_t *
+network_start_listening_on_comm_fd(
+    int comm_fd,
+    recv_fn_cb recv_fn){
+	
+	pthread_attr_t attr;
+	pthread_t *recv_pkt_thread;
+	
+	pthread_attr_init(&attr);
+	recv_pkt_thread = calloc(1, sizeof(pthread_t));
+
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+	
+	thread_arg_pkg_t *thread_arg_pkg = calloc(1, sizeof(thread_arg_pkg_t));
+	thread_arg_pkg->recv_fn = recv_fn;
+	thread_arg_pkg->comm_fd = comm_fd;
+ 
+	pthread_create(recv_pkt_thread, &attr,
+					_network_comm_fd_listening_fn, 
+					(void *) thread_arg_pkg);
+
+	return recv_pkt_thread;
+}
+
 
 int
-tcp_send_msg(int tcp_comm_fd,
+tcp_send_msg(char *dest_ip_addr,
+			 uint32_t port_no,
+			 int tcp_comm_fd,
              char *msg,
              uint32_t msg_size) {
 
-	return  sendto(tcp_comm_fd, msg, msg_size, 0, NULL, 0);    
+	if(tcp_comm_fd < 0) {
+		
+		tcp_comm_fd = tcp_connect(dest_ip_addr, port_no);
+		
+		if(tcp_comm_fd < 0) {
+			printf("Error : TCP  Connection failed with Server : "
+					"%s : %u", dest_ip_addr, port_no);
+		return -1;
+		}
+	}
+	sendto(tcp_comm_fd, msg, msg_size, 0, NULL, 0);    
+	return tcp_comm_fd;
 }
 
 /* Return +ve sock fd on successfull connection
@@ -639,12 +741,13 @@ tcp_connect(char *tcp_server_ip,
 	host = (struct hostent *)gethostbyname(tcp_server_ip);
 	
 	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons((unsigned short)tcp_server_port_no);
+	server_addr.sin_port = tcp_server_port_no;
 	server_addr.sin_addr = *((struct in_addr *)host->h_addr);
 
 	rc = connect(sock_fd, (struct sockaddr *)&server_addr,sizeof(struct sockaddr));
 	
 	if( rc < 0) {
+		printf("connect failed , errno = %d\n", errno);
 		close(sock_fd);
 		return -1;
 	}
@@ -683,8 +786,10 @@ tcp_disconnect(int comm_sock_fd,
                char *good_bye_msg,
                uint32_t good_bye_msg_size) {
 
+	assert(comm_sock_fd > 0);
+
 	if(good_bye_msg && good_bye_msg_size > 0 ) {
-		tcp_send_msg(comm_sock_fd, good_bye_msg, good_bye_msg_size);
+		tcp_send_msg(NULL, 0, comm_sock_fd, good_bye_msg, good_bye_msg_size);
 	}
 
 	close(comm_sock_fd);
@@ -721,7 +826,6 @@ void tcp_db_unlock(){
 
 tcp_connected_client_t *
 tcp_lookup_tcp_server_client_entry_by_comm_fd(
-	tcp_connections_db_t *tcp_connections_db,
 	uint32_t comm_fd,
 	bool tcp_db_already_locked){
 
@@ -775,7 +879,6 @@ tcp_delete_tcp_server_client_entry(
 
 void
 tcp_force_disconnect_client_by_comm_fd(
-	tcp_connections_db_t *tcp_connections_db,
 	uint32_t comm_fd,
 	bool tcp_db_already_locked){
 
@@ -785,7 +888,7 @@ tcp_force_disconnect_client_by_comm_fd(
 
 	tcp_connected_client_t * tcp_connected_client = 
 		tcp_lookup_tcp_server_client_entry_by_comm_fd(
-			tcp_connections_db, comm_fd,
+			comm_fd,
 			tcp_db_already_locked);
 
 	INSERT_UNLOCK_MGMT_CODE;
@@ -838,7 +941,7 @@ tcp_delete_tcp_server_client_entry_by_comm_fd(
 			if(tcp_connected_client->client_comm_fd == comm_fd) {
 
 				tcp_force_disconnect_client_by_comm_fd(
-					tcp_connections_db, comm_fd,
+					comm_fd,
 					tcp_db_already_locked);
 
 				INSERT_UNLOCK_MGMT_CODE;
@@ -1067,12 +1170,13 @@ tcp_shutdown_tcp_server(
 	printf("Server thread Cancelled, Resources Cleaned up\n");
 	pthread_join(tcp_server_thread_clone, 0);
 
+	/* Not actually resuming the server, but releasing the
+	 * mutex */
 	tcp_server_resume(tcp_server);
 
 	tcp_Server_ensure_all_resources_released(tcp_server);	
 	free(tcp_server);
 	printf("Server shut down complete\n");
-
 }
 
 tcp_server_t *

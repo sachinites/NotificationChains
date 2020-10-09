@@ -92,7 +92,20 @@ static void
 notif_chain_release_inet_skt_comm_channel_resource(
 		notif_chain_comm_channel_t *channel){
 
-	close(NOTIF_CHAIN_ELEM_SKT_FD(channel));
+/*
+ * Notification chain has not business to close the sockets
+ */
+#if 0
+	if(NOTIF_CHAIN_ELEM_PROTO(channel) == IPPROTO_TCP && 
+			NOTIF_CHAIN_ELEM_SKT_FD(channel) > 0){
+		tcp_force_disconnect_client_by_comm_fd(
+			NOTIF_CHAIN_ELEM_SKT_FD(channel), false);
+	}
+	else if(NOTIF_CHAIN_ELEM_PROTO(channel) == IPPROTO_UDP &&
+			NOTIF_CHAIN_ELEM_SKT_FD(channel) > 0){
+		close(NOTIF_CHAIN_ELEM_SKT_FD(channel));
+	}
+#endif
 }
 
 void
@@ -112,18 +125,18 @@ notif_chain_release_communication_channel_resources(
 	switch(notif_ch_type){
 
 		case NOTIF_C_CALLBACKS:
-			return;
+			break;
 		case NOTIF_C_MSG_Q:
 			/* Release Msg Q resources here*/
-			return;
+			break;
 		case NOTIF_C_AF_UNIX:
 			/*Release UNIX Sockets Resources here*/
-			return;
+			break;
 		case NOTIF_C_INET_SOCKETS:
 			/*Release INET Sockets reources here*/
 			notif_chain_release_inet_skt_comm_channel_resource(
 				channel);
-			return;
+			break;;
 		case NOTIF_C_NOT_KNOWN:
 		default:    ;
 	}
@@ -146,8 +159,10 @@ notif_chain_free_notif_chain_elem_internals(
 	}
 	notif_chain_elem->data.app_data_to_notify = 0;
 	notif_chain_elem->data.app_data_to_notify_size = 0;
+	
 	notif_chain_release_communication_channel_resources(
 			notif_chain_elem->notif_chain_comm_channel);
+
 	notif_chain_elem->notif_chain_comm_channel = 0;
 }
 
@@ -260,16 +275,16 @@ notif_chain_register_chain_element(
 
 	new_notif_chain_elem = notif_chain_notif_chain_elem_clone(
 							notif_chain_elem);
-	
+
 	glthread_priority_insert(&notif_chain->notif_chain_elem_head,
 							 &new_notif_chain_elem->glue,
 							 notif_chain_elem_cmp_fn,
 							 (int)(&((notif_chain_elem_t *)0)->glue));
-
+	
 	/* Now handle communication channel */
 	notif_chain_comm_channel = new_notif_chain_elem->notif_chain_comm_channel;
 	assert(notif_chain_comm_channel);
-	
+
 	registered_notif_chain_comm_channel = 
 			notif_chain_record_comm_channel_per_client(
 			    new_notif_chain_elem->client_id,
@@ -366,7 +381,7 @@ notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
 		}
 
 		/*Compare connunication channel also*/
-
+#if 0
 		if(notif_chain_comm_channel->notif_ch_type != 
 				notif_chain_elem_curr->notif_chain_comm_channel->notif_ch_type){
 			continue;
@@ -379,7 +394,7 @@ notif_chain_deregister_chain_element(notif_chain_t *notif_chain,
 
 			continue;
 		}
-
+#endif
 		remove_glthread(&notif_chain_elem_curr->glue);
 		notif_chain_elem_curr->notif_chain = 0;
 		notif_chain_free_notif_chain_elem(notif_chain_elem_curr);
@@ -394,6 +409,10 @@ notif_chain_invoke_communication_channel(
 		notif_chain_t *notif_chain,
 		notif_chain_elem_t *notif_chain_elem){
 
+	char *tlv_buff;
+	uint32_t tlv_buff_size;
+
+	tlv_buff = NULL;
 	notif_chain_comm_channel_t *
 		notif_chain_comm_channel = notif_chain_elem->notif_chain_comm_channel;
 
@@ -409,6 +428,22 @@ notif_chain_invoke_communication_channel(
 		case NOTIF_C_AF_UNIX:
 			break;
 		case NOTIF_C_INET_SOCKETS:
+			tlv_buff_size = notif_chain_serialize_notif_chain_elem(
+								notif_chain->name,
+								notif_chain_elem,
+								0, 0,
+								&tlv_buff); 
+			if(!tlv_buff || !tlv_buff_size) return;
+			
+			notif_chain_send_msg_to_subscriber(
+				network_covert_ip_n_to_p(
+					NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel), 0), /* Not used for TCP */
+				NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel), 		/* Not used for TCP */
+				tlv_buff, tlv_buff_size,
+				NOTIF_CHAIN_ELEM_SKT_FD(notif_chain_comm_channel),
+				NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel));
+			
+			free(tlv_buff);
 			break;
 		case NOTIF_C_NOT_KNOWN:
 			break;
@@ -496,13 +531,14 @@ notif_chain_dump_comm_channel(
 					NOTIF_CHAIN_ELEM_SKT_NAME(notif_chain_comm_channel));
 			break;
 		case NOTIF_C_INET_SOCKETS:	
-			rc += sprintf(buffer + rc, "%s : [%s : %u : %u]",
+			rc += sprintf(buffer + rc, "%s : [%s : %u : %u, comm_fd = %d]",
 					notif_chain_get_str_notif_ch_type(
 						notif_chain_comm_channel->notif_ch_type),
 					tcp_ip_covert_ip_n_to_p(
 						NOTIF_CHAIN_ELEM_IP_ADDR(notif_chain_comm_channel), 0),
 					NOTIF_CHAIN_ELEM_PORT_NO(notif_chain_comm_channel),
-					NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel));
+					NOTIF_CHAIN_ELEM_PROTO(notif_chain_comm_channel),
+					NOTIF_CHAIN_ELEM_SKT_FD(notif_chain_comm_channel));
 			break;
 		case NOTIF_C_NOT_KNOWN:
 			rc += sprintf(buffer + rc, "NOTIF_C_NOT_KNOWN");
@@ -685,8 +721,7 @@ notif_chain_process_remote_subscriber_request(
 		uint32_t subs_tlv_buffer_size,
 		char *subs_ip_addr,
 		uint32_t subs_port_number,
-		uint32_t subs_skt_fd,
-		int fd_set_arr[]){
+		uint32_t subs_skt_fd) {
 
 	notif_ch_type_t notif_ch_type;
 	notif_ch_notify_opcode_t notif_code;
@@ -700,6 +735,9 @@ notif_chain_process_remote_subscriber_request(
 			subs_tlv_buffer_size,
 			notif_chain_name);
 
+	NOTIF_CHAIN_ELEM_SKT_FD(notif_chain_elem->notif_chain_comm_channel)
+		= subs_skt_fd;
+	
 	notif_ch_type = NOTIF_CHAIN_COMM_CH_TYPE(notif_chain_elem);
 
 	assert(notif_ch_type != NOTIF_C_CALLBACKS);
@@ -769,7 +807,7 @@ notif_chain_subscribe_by_callback(
     }
 }
 
-bool
+int
 notif_chain_subscribe_by_inet_skt(
 		char *notif_chain_name,
 		void *key,
@@ -780,7 +818,8 @@ notif_chain_subscribe_by_inet_skt(
 		uint16_t protocol_no,
 		char *publisher_addr,
 		uint16_t publisher_port_no,
-		notif_ch_notify_opcode_t op_code){
+		notif_ch_notify_opcode_t op_code,
+		int sock_fd){
 
 
 	char *subs_tlv_buff = NULL;
@@ -827,10 +866,12 @@ notif_chain_subscribe_by_inet_skt(
 		return false;
 	}
 
-	notif_chain_send_msg_to_publisher(publisher_addr, 
+	int new_sock_fd = notif_chain_send_msg_to_publisher(publisher_addr, 
 			publisher_port_no,
 			subs_tlv_buff,
-			subs_tlv_buff_size);
+			subs_tlv_buff_size,
+			sock_fd,
+			protocol_no);
 
     if(notif_chain_elem.data.app_key_data){
         free(notif_chain_elem.data.app_key_data);
@@ -838,7 +879,7 @@ notif_chain_subscribe_by_inet_skt(
 	
 	free(subs_tlv_buff);
 	subs_tlv_buff = NULL;
-	return true;
+	return new_sock_fd;
 }
 
 bool
@@ -895,7 +936,8 @@ notif_chain_subscribe_by_unix_skt(
 	notif_chain_send_msg_to_publisher(publisher_addr, 
 			publisher_port_no,
 			subs_tlv_buff,
-			subs_tlv_buff_size);
+			subs_tlv_buff_size,
+			-1, UINT32_MAX);
 
     if(notif_chain_elem.data.app_key_data){
         free(notif_chain_elem.data.app_key_data);
@@ -961,7 +1003,8 @@ notif_chain_subscribe_msgq(
 	notif_chain_send_msg_to_publisher(publisher_addr, 
 			publisher_port_no,
 			subs_tlv_buff,
-			subs_tlv_buff_size);
+			subs_tlv_buff_size,
+			-1, UINT32_MAX);
 
     if(notif_chain_elem.data.app_key_data){
         free(notif_chain_elem.data.app_key_data);
@@ -975,38 +1018,83 @@ notif_chain_subscribe_msgq(
 /* APIs for Rx/Tx Msgs between Publisher and Subscribers
  * Over Network UDP Sockets*/
 static int
-notif_chain_send_udp_msg(char *dest_ip_addr,
+notif_chain_send_udp_msg(
+		char *dest_ip_addr,
 		uint32_t dest_port_no,
 		char *msg,
-		uint32_t msg_size){
+		uint32_t msg_size,
+		int sock_fd){
 
 	return send_udp_msg(dest_ip_addr,
-			dest_port_no,
-			msg, msg_size);
+	   			 dest_port_no,
+				 msg, msg_size, sock_fd);
+}
+
+static int
+notif_chain_send_tcp_msg(char *dest_ip_addr,
+		uint32_t dest_port_no,
+		char *msg,
+		uint32_t msg_size,
+		int sock_fd){
+
+	return tcp_send_msg(dest_ip_addr,
+			dest_port_no, 
+			sock_fd, msg, msg_size);
 }
 
 int
 notif_chain_send_msg_to_publisher(char *publisher_addr,
 		uint32_t publisher_port_no,
 		char *msg,
-		uint32_t msg_size){
+		uint32_t msg_size,
+		int sock_fd,
+		uint32_t protocol_no){
 
+	switch(protocol_no){
+	case IPPROTO_UDP:
 	return notif_chain_send_udp_msg(publisher_addr, 
 			publisher_port_no,
 			msg,
-			msg_size);
+			msg_size,
+			sock_fd);
+	case IPPROTO_TCP:
+	return notif_chain_send_tcp_msg(publisher_addr,
+			publisher_port_no,
+			msg,
+			msg_size,
+			sock_fd);
+	default:
+	;
+	}
 }
 
 int
-notif_chain_send_msg_to_subscriber(char *subscriber_addr,
-		uint16_t subscriber_port_no,
+notif_chain_send_msg_to_subscriber(
+		char *subscriber_addr,
+		uint32_t subscriber_port_no,
 		char *msg,
-		uint32_t msg_size){
+		uint32_t msg_size,
+		int sock_fd,
+		int protocol_no){
 
+	assert(sock_fd > 0);
+
+	switch(protocol_no){
+	case IPPROTO_UDP:
 	return notif_chain_send_udp_msg(subscriber_addr,
 			subscriber_port_no,
 			msg,
-			msg_size);
+			msg_size,
+			sock_fd);
+	case IPPROTO_TCP:
+	return notif_chain_send_tcp_msg(subscriber_addr,
+			subscriber_port_no,
+			msg,
+			msg_size,
+			sock_fd);
+	default:
+	;
+	}
 }
 
 uint32_t

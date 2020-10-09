@@ -70,6 +70,7 @@ main_menu(rt_table_t *rt){
 		printf("8. ShutDown TCP Server\n");
         printf("Enter Choice :");
         scanf("%d", &choice);
+		fflush(stdin);
         switch(choice){
             case 1:
                 {
@@ -129,7 +130,7 @@ main_menu(rt_table_t *rt){
 					printf("Enter client comm fd : ");
 					scanf("%u", &client_comm_fd);
 					tcp_force_disconnect_client_by_comm_fd(
-						&tcp_connections_db, client_comm_fd, false);
+						client_comm_fd, false);
 					break;
 				}
 			case 8:
@@ -188,7 +189,8 @@ void
 tcp_subscriber_killed_notification(char *ip_addr,
 								   uint32_t tcp_port_no){
 
-	printf("%s() Called \n", __FUNCTION__);
+	printf("%s() Called : TCP Client [%s %d] disconnected\n",
+		 __FUNCTION__, ip_addr, tcp_port_no);
 }
 
 int
@@ -217,7 +219,7 @@ main(int argc, char **argv){
      create_subscriber_thread(2);
      create_subscriber_thread(3);
     
-    /* Publisher needs to start the the separate thread so
+	/* Publisher needs to start the the separate thread so
      * that it can listen to remote subscriber's request on UDP socket.
      * Remote subscribers are those which runs as a separate process
      * on same or remote machine*/

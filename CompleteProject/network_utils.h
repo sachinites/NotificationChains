@@ -42,14 +42,13 @@ typedef void (*recv_fn_cb)(char *,		/* msg recvd */
 						   uint32_t,	/* recvd msg size */
 						   char *,		/* Sender's IP address */
 						   uint32_t,	/* Sender's Port number */
-						   uint32_t,	/* Sender Communication FD , only for tcp*/
-						   int []);		/* Monitored FD set array  , only for tcp*/
+						   uint32_t);	/* Sender Communication FD , only for tcp*/
 
 typedef void (*tcp_connect_cb)(char *,     /* Client's IP addr */
-									 uint32_t);  /* Client's port number */
+							   uint32_t);  /* Client's port number */
 
 typedef void (*tcp_disconnect_cb)(char *,		/*  Client's IP addr */
-								   uint32_t);  	/*  Client's port number */
+								  uint32_t);  	/*  Client's port number */
 
 /* Begin : Working with TCP Connected Clients 
  * DS to store connected TCP clients connection.
@@ -144,7 +143,6 @@ tcp_server_resume(tcp_server_t *tcp_server);
 
 tcp_connected_client_t *
 tcp_lookup_tcp_server_client_entry_by_comm_fd(
-	tcp_connections_db_t *tcp_connections_db,
 	uint32_t comm_fd,
 	bool tcp_db_already_locked);
 
@@ -206,6 +204,12 @@ network_start_tcp_pkt_receiver_thread(
 		tcp_connect_cb conn_init_req_fn,
 		tcp_disconnect_cb tcp_conn_killed_fn);
 
+
+pthread_t *
+network_start_listening_on_comm_fd(
+	int comm_fd,
+	recv_fn_cb recv_fn);
+	
 int
 tcp_connect(char *tcp_server_ip,
 			uint32_t tcp_server_port_no);
@@ -222,10 +226,13 @@ int
 send_udp_msg(char *dest_ip_addr,
 			 uint32_t udp_port_no,
 			 char *msg,
-			 uint32_t msg_size);
+			 uint32_t msg_size,
+			 int sock_fd);
 
 int
-tcp_send_msg(int tcp_comm_fd,
+tcp_send_msg(char *dest_ip_addr,
+			 uint32_t dst_port_no,
+			 int tcp_comm_fd,
 			 char *msg,
 			 uint32_t msg_size);
 
@@ -237,7 +244,6 @@ tcp_force_disconnect_client_by_ip_addr_port(
 
 void
 tcp_force_disconnect_client_by_comm_fd(
-		tcp_connections_db_t *tcp_connections_db,
 		uint32_t comm_fd,
 		bool tcp_db_already_locked);
 

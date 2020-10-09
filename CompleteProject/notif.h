@@ -322,8 +322,7 @@ notif_chain_process_remote_subscriber_request(
         uint32_t subs_tlv_buffer_size,
         char *subs_ip_addr,
         uint32_t subs_port_number,
-        uint32_t subs_skt_fd,
-        int fd_set_arr[]);
+        uint32_t subs_skt_fd);
 
 bool
 notif_chain_subscribe_by_callback(
@@ -333,7 +332,8 @@ notif_chain_subscribe_by_callback(
         uint32_t client_id,
         notif_chain_app_cb cb);
 
-bool
+/* Returns the skt file Des using which the msg was sent */
+int
 notif_chain_subscribe_by_inet_skt(
         char *notif_chain_name,
         void *key,
@@ -344,7 +344,8 @@ notif_chain_subscribe_by_inet_skt(
         uint16_t protocol_no,
         char *publisher_addr,
         uint16_t publisher_port_no,
-		notif_ch_notify_opcode_t op_code);
+		notif_ch_notify_opcode_t op_code,
+		int sock_fd); /* sock FD to send the msg, -1 if it is first request */
 
 bool
 notif_chain_subscribe_by_unix_skt(
@@ -370,12 +371,16 @@ int
 notif_chain_send_msg_to_publisher(char *publisher_addr,
                                   uint32_t publisher_port_no,
                                   char *msg,
-                                  uint32_t msg_size);
+                                  uint32_t msg_size,
+								  int sock_fd,
+								  uint32_t protocol_no);
 int
 notif_chain_send_msg_to_subscriber(char *subscriber_addr,
-                                   uint16_t subscriber_port_no,
-                                   char *msg,
-                                   uint32_t msg_size);
+								   uint32_t subscriber_port_no,
+								   char *msg,
+                                   uint32_t msg_size,
+								   int sock_fd,
+								   int protocol_no);
 
 /* TLV Management */
 #define NOTIF_C_NOTIF_CHAIN_NAME_TLV    (1)  /* Value len : NOTIF_NAME_SIZE */

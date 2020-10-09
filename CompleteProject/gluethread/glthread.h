@@ -59,7 +59,9 @@ glthread_add_last(glthread_t *base_glthread, glthread_t *new_glthread);
 
 #define GLTHREAD_TO_STRUCT(fn_name, structure_name, field_name)                        \
     static inline structure_name * fn_name(glthread_t *glthreadptr){                   \
+		if(glthreadptr)\
         return (structure_name *)((char *)(glthreadptr) - (char *)&(((structure_name *)0)->field_name)); \
+		else return NULL;\
     }
 
 /* delete safe loop*/
