@@ -59,7 +59,7 @@ typedef struct thread_arg_pkg_{
 
 	char ip_addr[16];
 	uint32_t port_no;
-	uint32_t comm_fd;
+	int comm_fd;
 	recv_fn_cb recv_fn;
 	tcp_connect_cb tcp_connect_fn;
 	tcp_disconnect_cb tcp_disconnect_fn;
@@ -108,7 +108,7 @@ _network_start_udp_pkt_receiver_thread(void *arg){
 
 	if (bind(udp_sock_fd, (struct sockaddr *)&server_addr,
 				sizeof(struct sockaddr)) == -1) {
-		printf("Error : socket bind failed\n");
+		printf("Error : UDP socket bind failed\n");
 		return 0;
 	}
 
@@ -389,7 +389,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
 	if (bind(tcp_master_sock_fd, (struct sockaddr *)&server_addr,
 				sizeof(struct sockaddr)) == -1) {
-		printf("Error : socket bind failed\n");
+		printf("Error : Master socket bind failed\n");
 		goto CLEANUP;
 	}
 
@@ -415,7 +415,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
 	if (bind(tcp_dummy_master_sock_fd, (struct sockaddr *)&server_addr,
 				sizeof(struct sockaddr)) == -1) {
-		printf("Error : socket bind failed\n");
+		printf("Error : Dummy socket bind failed\n");
 		goto CLEANUP;
 	}
 
@@ -469,10 +469,6 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
     int bytes_recvd = 0,
        	addr_len = sizeof(client_addr);
 	
-	fd_set zero_fd_set;
-	memset(&zero_fd_set, 0, sizeof(fd_set));
-	FD_SET(tcp_dummy_master_sock_fd, &zero_fd_set);
-
     while(1){
 
 		fd_set_skt_fd(&backup_sock_fd_set,
@@ -481,17 +477,12 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
         memcpy(&active_sock_fd_set, &backup_sock_fd_set, sizeof(fd_set));
 
-		/* Stop the thread if no FDs to monitor, including Master FDs */
-		if(memcmp(&active_sock_fd_set, &zero_fd_set, sizeof(fd_set)) == 0){
-			printf("TCP Server [%s %u] Thread Terminating\n", 
-				tcp_server->ip_addr, tcp_server->port_no);
-			break;
-		}
-
         select(
 			get_max_fd (monitored_tcp_fd_set_array,
 					    MAX_CLIENT_TCP_CONNECTION_SUPPORTED) + 1,
 			&active_sock_fd_set, NULL, NULL, NULL);
+		
+		printf("select unblocked\n");
 
 		/* Check with the kernel if the cancel signal is receieved */
 		pthread_testcancel();
@@ -513,6 +504,10 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		    add_to_monitored_tcp_fd_set(comm_socket_fd,
 										monitored_tcp_fd_set_array,
 										MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+			fd_set_skt_fd(&backup_sock_fd_set,
+					monitored_tcp_fd_set_array,
+					MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+
 
 			tcp_connected_client_t *tcp_connected_client = 
 					calloc(1, sizeof(tcp_connected_client_t));
@@ -532,8 +527,25 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
 			if(tcp_connect_fn) tcp_connect_fn( 0, 0);
         }
+		
 		else if(FD_ISSET(tcp_dummy_master_sock_fd, &active_sock_fd_set)){
-			/* No need to do anything */	
+
+			fd_set_skt_fd(&backup_sock_fd_set,
+					monitored_tcp_fd_set_array,
+					MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+
+			printf("DISCONNECT\n");
+			
+			/* 
+ 			*  if the Disconnect is invoked by Appln, then here we would not know
+ 			*  which client has disconnected, hence, no need to invoke tcp_disconnect
+ 			*  callback. Why would TCP server inform the action which the application
+ 			*  itself has taken ? Just saying ...
+ 			*  */
+			#if 0			
+			if(tcp_disconnect_fn) {
+				tcp_disconnect_fn(0,0);
+			#endif
 		}
 		else {
 			int i = 0;
@@ -545,52 +557,64 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 				}
 
 				if(FD_ISSET(monitored_tcp_fd_set_array[i], &active_sock_fd_set)){
+
+					fd_set_skt_fd(&backup_sock_fd_set,
+							monitored_tcp_fd_set_array,
+							MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+					
 					
 					/* Data Request from existing connection */
 					int comm_socket_fd = monitored_tcp_fd_set_array[i];
 
-					memset(recv_buffer, 0 , MAX_PACKET_BUFFER_SIZE);
+					//memset(recv_buffer, 0 , MAX_PACKET_BUFFER_SIZE);
 					
 					bytes_recvd = recvfrom(comm_socket_fd, recv_buffer,
 								  MAX_PACKET_BUFFER_SIZE, 0,
 								  (struct sockaddr *)&client_addr, &addr_len);
 					
-					/* The connected client has Cored/Crashed/Seg fault or
- 					 * or abruptly terminated for other reasons such as Ctrl-C */			
-					if(bytes_recvd == 0) {
-						
-						remove_from_monitored_tcp_fd_set(comm_socket_fd,
-											monitored_tcp_fd_set_array,
-											MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
-						
-						if(tcp_disconnect_fn) tcp_disconnect_fn(0, 0);
-						
-						tcp_db_lock();
-		
+					if(bytes_recvd){
+
 						tcp_connected_client_t *tcp_connected_client = 
 							tcp_lookup_tcp_server_client_entry_by_comm_fd(
 									comm_socket_fd, false);
-						//assert(tcp_connected_client);
-						if(!tcp_connected_client) {
-							tcp_db_unlock();
-							continue;
-						}
-						tcp_delete_tcp_server_client_entry(
-							tcp_connected_client, false);		
-						tcp_db_unlock();
-					} 
-					else {
-						tcp_connected_client_t *tcp_connected_client = 
-							tcp_lookup_tcp_server_client_entry_by_comm_fd(
-								comm_socket_fd, false);
-						
+
 						if(!tcp_connected_client) continue;
-						
+
 						recv_fn(recv_buffer, bytes_recvd,
 								tcp_connected_client->client_ip_addr,
 								tcp_connected_client->client_tcp_port_no,
 								comm_socket_fd);	
 					}
+					
+					/* The connected client has Cored/Crashed/Seg fault or
+ 					 * or abruptly terminated for other reasons such as Ctrl-C */			
+					else {
+						
+						remove_from_monitored_tcp_fd_set(comm_socket_fd,
+											monitored_tcp_fd_set_array,
+											MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+
+						fd_set_skt_fd(&backup_sock_fd_set,
+								monitored_tcp_fd_set_array,
+								MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
+						
+						tcp_connected_client_t *tcp_connected_client = 
+							tcp_lookup_tcp_server_client_entry_by_comm_fd(
+									comm_socket_fd, false);
+						//assert(tcp_connected_client);
+						if(!tcp_connected_client) {
+							continue;
+						}
+						
+						if(tcp_disconnect_fn) {
+							tcp_disconnect_fn(
+								tcp_connected_client->client_ip_addr,
+								tcp_connected_client->client_tcp_port_no);
+						}
+						
+						tcp_delete_tcp_server_client_entry(
+							tcp_connected_client, false);		
+					} 
 				}
 			}
 		}
@@ -635,16 +659,21 @@ network_start_tcp_pkt_receiver_thread(
 }
 
 static void
-network_listener_thread_cleaner(void *arg){
+tcp_client_listener_thread_cleaner(void *arg){
 
+	int comm_fd;
 	thread_arg_pkg_t *thread_arg_pkg = (thread_arg_pkg_t *)arg;
 	assert(thread_arg_pkg->recv_buffer);
 	free(thread_arg_pkg->recv_buffer);
 	close(thread_arg_pkg->comm_fd);
+	comm_fd = thread_arg_pkg->comm_fd;
+	free(thread_arg_pkg->thread);
+	free(thread_arg_pkg);
+	printf("TCP listener thread cleaned up on fd = %d\n", comm_fd);
 }
 
 static void *
-_network_comm_fd_listening_fn(void *arg){
+_tcp_client_listen_after_connect(void *arg){
 
 
 	thread_arg_pkg_t *thread_arg_pkg = (thread_arg_pkg_t *)arg;
@@ -657,27 +686,29 @@ _network_comm_fd_listening_fn(void *arg){
 
 	thread_arg_pkg->recv_buffer = recv_buffer;
  
-	pthread_cleanup_push(network_listener_thread_cleaner,  (void *)thread_arg_pkg);
+	pthread_cleanup_push(tcp_client_listener_thread_cleaner,
+		(void *)thread_arg_pkg);
 
-	struct sockaddr_in client_addr;
-	int bytes_recvd = 0,
-		addr_len = sizeof(client_addr);
+	int bytes_recvd = 0;
 
 	while(1){
 		memset(recv_buffer, 0, MAX_PACKET_BUFFER_SIZE);
-		bytes_recvd = recvfrom(comm_fd,	recv_buffer, 
-								MAX_PACKET_BUFFER_SIZE,
-								0, (struct sockaddr *)&client_addr, &addr_len);		
-	
+		printf("blocking on read\n");
+		bytes_recvd = read(comm_fd, recv_buffer, MAX_PACKET_BUFFER_SIZE);
+		if(bytes_recvd <= 0) {
+			printf("Error on Read, exiting ...\n");
+			break;
+		}
 		recv_fn(recv_buffer, bytes_recvd, 0, 0, comm_fd);	
 	}
+	/* invoke cleanup routine*/
 	pthread_cleanup_pop(0);
 	return NULL;		
 }
 
 pthread_t *
-network_start_listening_on_comm_fd(
-    int comm_fd,
+tcp_client_listen_after_connect(
+    int tcp_client_comm_fd,
     recv_fn_cb recv_fn){
 	
 	pthread_attr_t attr;
@@ -690,10 +721,10 @@ network_start_listening_on_comm_fd(
 	
 	thread_arg_pkg_t *thread_arg_pkg = calloc(1, sizeof(thread_arg_pkg_t));
 	thread_arg_pkg->recv_fn = recv_fn;
-	thread_arg_pkg->comm_fd = comm_fd;
- 
+	thread_arg_pkg->comm_fd = tcp_client_comm_fd;
+	thread_arg_pkg->thread = recv_pkt_thread; 
 	pthread_create(recv_pkt_thread, &attr,
-					_network_comm_fd_listening_fn, 
+					_tcp_client_listen_after_connect, 
 					(void *) thread_arg_pkg);
 
 	return recv_pkt_thread;
@@ -702,22 +733,26 @@ network_start_listening_on_comm_fd(
 
 int
 tcp_send_msg(char *dest_ip_addr,
-			 uint32_t port_no,
+			 uint32_t dest_port_no,
 			 int tcp_comm_fd,
              char *msg,
              uint32_t msg_size) {
 
+	int rc = 0;
+
 	if(tcp_comm_fd < 0) {
 		
-		tcp_comm_fd = tcp_connect(dest_ip_addr, port_no);
+		tcp_comm_fd = tcp_connect(dest_ip_addr, dest_port_no);
 		
 		if(tcp_comm_fd < 0) {
 			printf("Error : TCP  Connection failed with Server : "
-					"%s : %u", dest_ip_addr, port_no);
+					"%s : %u", dest_ip_addr, dest_port_no);
 		return -1;
 		}
 	}
-	sendto(tcp_comm_fd, msg, msg_size, 0, NULL, 0);    
+	
+	rc = sendto(tcp_comm_fd, msg, msg_size, 0, NULL , 0 );    
+	printf("bytes sent = %d\n", rc);
 	return tcp_comm_fd;
 }
 
@@ -777,6 +812,10 @@ tcp_fake_connect(char *tcp_server_ip,
 	server_addr.sin_addr = *((struct in_addr *)host->h_addr);
 
 	rc = connect(sock_fd, (struct sockaddr *)&server_addr,sizeof(struct sockaddr));
+	if(rc < 0) {
+		printf("Error Connection Failed with Server [%s : %u], errno = %d\n",
+				tcp_server_ip, tcp_server_port_no, errno);
+	}
 
 	close(sock_fd);	
 }

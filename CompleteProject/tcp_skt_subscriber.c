@@ -41,114 +41,123 @@
 #include "rt.h"
 #include "network_utils.h"
 
+static tcp_connections_db_t tcp_connections_db;
+
+int tcp_sock_fd = -1;
+pthread_t * recvr_thread;
+
 static void
 process_remote_msgs(char *recv_msg_buffer, 
 					uint32_t recv_msg_buffer_size,
 					char *sender_ip_addr,
         			uint32_t sender_port_number,
-        			uint32_t udp_sock_fd){
+        			uint32_t sender_skt_fd){
 
-	printf("%s() called\n", __FUNCTION__);
+	printf("%s() called..n", __FUNCTION__);
 }
-
-int udp_sock_fd = -1;
 
 void 
 main_menu(){
 
    	rt_entry_keys_t rt_entry_keys;
 	
-
-    strncpy(rt_entry_keys.dest, "122.1.1.7", 16);
+    strncpy(rt_entry_keys.dest, "122.1.1.6", 16);
     rt_entry_keys.mask = 32;
 
 	/* Register for some sample entries */
-	udp_sock_fd = notif_chain_subscribe_by_inet_skt(
+	tcp_sock_fd = notif_chain_subscribe_by_inet_skt(
 		"notif_chain_rt_table",
 		&rt_entry_keys,
 		sizeof(rt_entry_keys_t),
 		getpid(),
 		"127.0.0.1",
-		2001,
-		IPPROTO_UDP,
+		4002,
+		IPPROTO_TCP,
 		"127.0.0.1",
-		2000,
-		SUBS_TO_PUB_NOTIF_C_SUBSCRIBE, udp_sock_fd);
+		2002,
+		SUBS_TO_PUB_NOTIF_C_SUBSCRIBE, 
+		tcp_sock_fd);
 
-	strncpy(rt_entry_keys.dest, "122.1.1.8", 16);
+//	sleep(1);
+
+	strncpy(rt_entry_keys.dest, "122.1.1.7", 16);
     rt_entry_keys.mask = 32;
-	
-	udp_sock_fd = notif_chain_subscribe_by_inet_skt(
+
+	tcp_sock_fd = notif_chain_subscribe_by_inet_skt(
 		"notif_chain_rt_table",
 		&rt_entry_keys,
 		sizeof(rt_entry_keys_t),
 		getpid(),
 		"127.0.0.1",
-		2001,
-		IPPROTO_UDP,
+		4002,
+		IPPROTO_TCP,
 		"127.0.0.1",
-		2000,
+		2002,
 		SUBS_TO_PUB_NOTIF_C_SUBSCRIBE,
-		udp_sock_fd);
+		tcp_sock_fd);
+
 #if 0
-	sleep(5);
     strncpy(rt_entry_keys.dest, "122.1.1.3", 16);
     rt_entry_keys.mask = 32;
 
 	/* Register for some sample entries */
-	udp_sock_fd = notif_chain_subscribe_by_inet_skt(
+	tcp_sock_fd = notif_chain_subscribe_by_inet_skt(
 		"notif_chain_rt_table",
 		&rt_entry_keys,
 		sizeof(rt_entry_keys_t),
 		getpid(),
 		"127.0.0.1",
-		2001,
-		IPPROTO_UDP,
+		4002,
+		IPPROTO_TCP,
 		"127.0.0.1",
-		2000,
+		2002,
 		SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE,
-		udp_sock_fd);
-	
+		tcp_sock_fd);
 	strncpy(rt_entry_keys.dest, "122.1.1.4", 16);
     rt_entry_keys.mask = 32;
 	
-	udp_sock_fd = notif_chain_subscribe_by_inet_skt(
+	tcp_sock_fd = notif_chain_subscribe_by_inet_skt(
 		"notif_chain_rt_table",
 		&rt_entry_keys,
 		sizeof(rt_entry_keys_t),
 		getpid(),
 		"127.0.0.1",
-		2001,
-		IPPROTO_UDP,
+		4002,
+		IPPROTO_TCP,
 		"127.0.0.1",
-		2000,
+		2002,
 		SUBS_TO_PUB_NOTIF_C_UNSUBSCRIBE,
-		udp_sock_fd);	
-	
+		tcp_sock_fd);	
 	sleep(5);
+	#endif
+#if 0
+	network_start_tcp_pkt_receiver_thread(
+			"127.0.0.1",
+			4002,
+			process_remote_msgs,
+			0, 0);
 #endif
-
-#if 1
-	network_start_udp_pkt_receiver_thread(
-		"127.0.0.1",
-		2001,
-		process_remote_msgs);	
-#endif
+	if(tcp_sock_fd > 0){
+	recvr_thread = tcp_client_listen_after_connect(
+					tcp_sock_fd,
+					process_remote_msgs);
+	}
 }
 
 int
 main(int argc, char **argv){
 
-
+	init_network_skt_lib(&tcp_connections_db);
+    /*Start the pkt receiever thread*/
     main_menu();
-#if 0
-	if(udp_sock_fd > 0){
+	
+	getchar();
 
-		pthread_t * recvr_thread = tcp_client_listen_after_connect(
-						0, 0, udp_sock_fd, process_remote_msgs);
-	}
-#endif
-	pause();
+	pthread_t clone_thread = *recvr_thread;
+	printf("sending Cancel Request\n");
+	pthread_cancel(clone_thread);
+	pthread_join(clone_thread, 0);
+	printf("Thread joined main\n");
     return 0;
 }
 

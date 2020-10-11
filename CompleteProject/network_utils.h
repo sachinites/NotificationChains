@@ -204,11 +204,10 @@ network_start_tcp_pkt_receiver_thread(
 		tcp_connect_cb conn_init_req_fn,
 		tcp_disconnect_cb tcp_conn_killed_fn);
 
-
 pthread_t *
-network_start_listening_on_comm_fd(
-	int comm_fd,
-	recv_fn_cb recv_fn);
+tcp_client_listen_after_connect(
+    int local_comm_fd,
+    recv_fn_cb recv_fn);
 	
 int
 tcp_connect(char *tcp_server_ip,

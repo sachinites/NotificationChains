@@ -173,7 +173,11 @@ glthread_priority_insert(glthread_t *glthread_head,
             continue;
         }
 
-        glthread_add_next(prev, glthread);
+		if(!prev)
+			glthread_add_next(glthread_head, glthread);
+		else
+			glthread_add_next(prev, glthread);
+
         return;
 
     }ITERATE_GLTHREAD_END(glthread_head, curr);
