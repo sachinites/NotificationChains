@@ -129,7 +129,7 @@ main_menu(){
 #endif
 
 #if 1
-	network_start_udp_pkt_receiver_thread(
+	udp_server_create_and_start(
 		"127.0.0.1",
 		2001,
 		process_remote_msgs);	

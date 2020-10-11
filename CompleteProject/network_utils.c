@@ -71,7 +71,7 @@ typedef struct thread_arg_pkg_{
 /* UDP Server code*/
 
 static void *
-_network_start_udp_pkt_receiver_thread(void *arg){
+_udp_server_create_and_start(void *arg){
 
 	thread_arg_pkg_t *thread_arg_pkg = 
 		(thread_arg_pkg_t *)arg;
@@ -148,7 +148,7 @@ _network_start_udp_pkt_receiver_thread(void *arg){
 
 
 void
-network_start_udp_pkt_receiver_thread(
+udp_server_create_and_start(
         char *ip_addr,
         uint32_t udp_port_no,
 		recv_fn_cb recv_fn){
@@ -168,7 +168,7 @@ network_start_udp_pkt_receiver_thread(
 	thread_arg_pkg->tcp_disconnect_fn = NULL;
 
     pthread_create(&recv_pkt_thread, &attr,
-			_network_start_udp_pkt_receiver_thread,
+			_udp_server_create_and_start,
             (void *)thread_arg_pkg);
 }
 
@@ -333,13 +333,16 @@ tcp_server_cleanup_handler(void *arg){
 	free(tcp_server->tcp_server_thread);
 	tcp_server->tcp_server_thread = NULL;
 
+	free(tcp_server->recv_buffer);
+	tcp_server->recv_buffer = NULL;
+
 	tcp_remove_tcp_server_entry(tcp_server, true);
 	tcp_db_unlock();
 }
 
 
 static void *
-_network_start_tcp_pkt_receiver_thread(void *arg){
+_tcp_server_create_and_start(void *arg){
 
 	int opt = 1;
 	int *monitored_tcp_fd_set_array;
@@ -425,6 +428,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 		goto CLEANUP;
 	}
 	
+	char *recv_buffer = calloc(1, MAX_PACKET_BUFFER_SIZE);
 	tcp_server_t *tcp_server = calloc(1, sizeof(tcp_server_t));
 	tcp_server->master_sock_fd = tcp_master_sock_fd;
 	tcp_server->dummy_master_sock_fd = tcp_dummy_master_sock_fd;
@@ -435,6 +439,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 	tcp_server->tcp_connect_fn = tcp_connect_fn;
 	monitored_tcp_fd_set_array = tcp_server->monitored_tcp_fd_set_array;
 	tcp_server->tcp_server_thread = thread;
+	tcp_server->recv_buffer = recv_buffer;
 	init_glthread(&tcp_server->clients_list_head);
 	init_glthread(&tcp_server->glue);
 	pthread_mutex_init(&tcp_server->tcp_server_pause_mutex, NULL);
@@ -457,7 +462,6 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 	tcp_server->master_sock_fd = tcp_master_sock_fd;
 	tcp_server->dummy_master_sock_fd = tcp_dummy_master_sock_fd;
 
-	char *recv_buffer = calloc(1, MAX_PACKET_BUFFER_SIZE);
 
 	fd_set active_sock_fd_set,
     	   backup_sock_fd_set;
@@ -632,7 +636,7 @@ _network_start_tcp_pkt_receiver_thread(void *arg){
 
 
 void
-network_start_tcp_pkt_receiver_thread(
+tcp_server_create_and_start(
         char *ip_addr,
         uint32_t tcp_port_no,
 		recv_fn_cb recv_fn,
@@ -654,7 +658,7 @@ network_start_tcp_pkt_receiver_thread(
 	thread_arg_pkg->tcp_disconnect_fn = tcp_disconnect_fn;
 	thread_arg_pkg->thread = calloc(1, sizeof(pthread_t));
     pthread_create(thread_arg_pkg->thread, &attr,
-			_network_start_tcp_pkt_receiver_thread,
+			_tcp_server_create_and_start,
             (void *)thread_arg_pkg);
 }
 
@@ -1244,6 +1248,16 @@ tcp_lookup_tcp_server_entry_by_ipaddr_port(
 
 	INSERT_UNLOCK_MGMT_CODE;
 	return NULL;
+}
+
+static pthread_t *
+thread_fork( void *(*thread_fn)(void *),
+			 void *thread_fn_arg,
+			 uint32_t thread_fn_arg_size,
+			 void (*thread_cleanup_handler)(void *),
+			 uint32_t flags,
+			 void (*appln_cb)(void *, uint32_t)) {
+
 }
 
 char *

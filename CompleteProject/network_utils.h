@@ -71,6 +71,7 @@ typedef struct tcp_server_{
     int monitored_tcp_fd_set_array
 		[MAX_CLIENT_TCP_CONNECTION_SUPPORTED];
 	pthread_t *tcp_server_thread;
+	char *recv_buffer;
 	pthread_mutex_t tcp_server_pause_mutex;
 	/* 	Other properties below
 		< other tcp server properties >
@@ -191,13 +192,13 @@ tcp_dump_tcp_connection_db(
 /* End : Working with TCP Connected Clients */
 
 void
-network_start_udp_pkt_receiver_thread(
+udp_server_create_and_start(
 		char *ip_addr,
 		uint32_t udp_port_no,
 		recv_fn_cb recv_fn);
 
 void
-network_start_tcp_pkt_receiver_thread(
+tcp_server_create_and_start(
 		char *ip_addr,
 		uint32_t tcp_port_no,
 		recv_fn_cb recv_fn,

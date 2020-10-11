@@ -223,7 +223,7 @@ main(int argc, char **argv){
      * that it can listen to remote subscriber's request on UDP socket.
      * Remote subscribers are those which runs as a separate process
      * on same or remote machine*/
-     network_start_udp_pkt_receiver_thread(
+     udp_server_create_and_start(
 			"127.0.0.1",
 			2000,
 			notif_chain_process_remote_subscriber_request);	
@@ -232,42 +232,42 @@ main(int argc, char **argv){
      * that it can listen to remote subscriber's request on TCP socket.
      * Remote subscribers are those which runs as a separate process
      * on same or remote machine*/
-	 network_start_tcp_pkt_receiver_thread(
+	 tcp_server_create_and_start(
 			"127.0.0.1",
 			2002,
 			notif_chain_process_remote_subscriber_request,
 			tcp_subscriber_join_notification,
 			tcp_subscriber_killed_notification);	
 
-	 network_start_tcp_pkt_receiver_thread(
+	 tcp_server_create_and_start(
 			"127.0.0.1",
 			2004,
 			notif_chain_process_remote_subscriber_request,
 			tcp_subscriber_join_notification,
 			tcp_subscriber_killed_notification);	
 	 
-	network_start_tcp_pkt_receiver_thread(
+	tcp_server_create_and_start(
 			"127.0.0.1",
 			2006,
 			notif_chain_process_remote_subscriber_request,
 			tcp_subscriber_join_notification,
 			tcp_subscriber_killed_notification);	
 
-	 network_start_tcp_pkt_receiver_thread(
+	 tcp_server_create_and_start(
 			"127.0.0.1",
 			2008,
 			notif_chain_process_remote_subscriber_request,
 			tcp_subscriber_join_notification,
 			tcp_subscriber_killed_notification);	
 
-	 network_start_tcp_pkt_receiver_thread(
+	 tcp_server_create_and_start(
 			"127.0.0.1",
 			2010,
 			notif_chain_process_remote_subscriber_request,
 			tcp_subscriber_join_notification,
 			tcp_subscriber_killed_notification);	
 	 
-	network_start_tcp_pkt_receiver_thread(
+	tcp_server_create_and_start(
 			"127.0.0.1",
 			2012,
 			notif_chain_process_remote_subscriber_request,

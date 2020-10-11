@@ -131,7 +131,7 @@ main_menu(){
 	sleep(5);
 	#endif
 #if 0
-	network_start_tcp_pkt_receiver_thread(
+	tcp_server_create_and_start(
 			"127.0.0.1",
 			4002,
 			process_remote_msgs,
