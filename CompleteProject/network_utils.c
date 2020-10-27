@@ -486,8 +486,6 @@ _tcp_server_create_and_start(void *arg){
 					    MAX_CLIENT_TCP_CONNECTION_SUPPORTED) + 1,
 			&active_sock_fd_set, NULL, NULL, NULL);
 		
-		printf("select unblocked\n");
-
 		/* Check with the kernel if the cancel signal is receieved */
 		pthread_testcancel();
 
@@ -538,7 +536,7 @@ _tcp_server_create_and_start(void *arg){
 					monitored_tcp_fd_set_array,
 					MAX_CLIENT_TCP_CONNECTION_SUPPORTED);
 
-			printf("DISCONNECT\n");
+			printf("VOLUNTARY DISCONNECT\n");
 			
 			/* 
  			*  if the Disconnect is invoked by Appln, then here we would not know
@@ -570,8 +568,6 @@ _tcp_server_create_and_start(void *arg){
 					/* Data Request from existing connection */
 					int comm_socket_fd = monitored_tcp_fd_set_array[i];
 
-					//memset(recv_buffer, 0 , MAX_PACKET_BUFFER_SIZE);
-					
 					bytes_recvd = recvfrom(comm_socket_fd, recv_buffer,
 								  MAX_PACKET_BUFFER_SIZE, 0,
 								  (struct sockaddr *)&client_addr, &addr_len);

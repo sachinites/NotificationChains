@@ -92,6 +92,7 @@ rt_entry_remove(rt_table_t *rt_table,
             rt_entry->next = 0;
             return;
         }
+		rt_table->head = 0;
         return;
     }
     if(!rt_entry->next){
