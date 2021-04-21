@@ -5,9 +5,14 @@
 #include <netdb.h>
 #include <memory.h>
 #include <unistd.h>
+#include <errno.h>
+#include <arpa/inet.h>
 
-#define DEST_PORT            2006
-#define SERVER_IP_ADDRESS   "127.0.0.1"
+#define DEST_PORT            40002
+#define SERVER_IP_ADDRESS   "100.1.1.2"
+
+#define SRC_PORT	     40000
+#define LOCAL_IP_ADDRESS    "100.1.1.1"
 
 typedef struct _test_struct{
 
@@ -49,7 +54,7 @@ setup_tcp_communication(){
      * Inform client about which server to send data to : All we need is port number, and server ip address. Pls note that
      * there can be many processes running on the server listening on different no of ports, 
      * our client is interested in sending data to server process which is lisetning on PORT = DEST_PORT*/ 
-    dest.sin_port = DEST_PORT;
+    dest.sin_port = htons(DEST_PORT);
     struct hostent *host = (struct hostent *)gethostbyname(SERVER_IP_ADDRESS);
     dest.sin_addr = *((struct in_addr *)host->h_addr);
 
@@ -57,8 +62,23 @@ setup_tcp_communication(){
     /*Create a socket finally. socket() is a system call, which asks for three paramemeters*/
     sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
+    /*to specify the client IP Address and Port no*/
+    struct sockaddr_in localaddr;
+    localaddr.sin_family = AF_INET;
+    localaddr.sin_addr.s_addr = inet_addr(LOCAL_IP_ADDRESS);
+    localaddr.sin_port = htons(SRC_PORT);  // Any local port will do
+    bind(sockfd, (struct sockaddr *)&localaddr, sizeof(localaddr));
 
-    connect(sockfd, (struct sockaddr *)&dest,sizeof(struct sockaddr));
+    printf("Connecting to Server\n");
+    int rc = connect(sockfd, (struct sockaddr *)&dest,sizeof(struct sockaddr));
+
+    if (rc == 0) {
+    	printf("connected\n");
+    }
+    else {
+    	printf("connection failed, error no %d\n", errno);
+    	exit(0);
+    }
 
     /*Step 4 : get the data to be sent to server*/
     /*Our client is now ready to send data to server. sendto() sends data to Server*/
@@ -90,6 +110,7 @@ PROMPT_USER:
     
     /*recvfrom is a blocking system call, meaning the client program will not run past this point
      * untill the data arrives on the socket from server*/
+    printf("Waiting for response:\n");
     sent_recv_bytes =  recvfrom(sockfd, (char *)&result, sizeof(result_struct_t), 0,
                     (struct sockaddr *)&dest, &addr_len);
 

@@ -16,5 +16,6 @@ gcc -g rt.o publisher.o notif.o utils.o threaded_subsciber.o gluethread/glthread
 gcc -g msgq_subs.o notif.o utils.o gluethread/glthread.o network_utils.o -o msgq_subs.exe -lpthread
 gcc -g skt_subscriber.o notif.o utils.o  gluethread/glthread.o network_utils.o -o skt_subscriber.exe -lpthread
 gcc -g tcp_skt_subscriber.o notif.o utils.o  gluethread/glthread.o network_utils.o -o tcp_skt_subscriber.exe -lpthread
-
+gcc -g -c tcp_server.c -o tcp_server.o
+gcc -g tcp_server.o notif.o utils.o network_utils.o gluethread/glthread.o -o tcp_server.exe -lpthread
 
